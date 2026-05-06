@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "neco-json",
+    "neco-kdl",
+    "neco-kdl-ast",
+]
+
+resolver = "2"

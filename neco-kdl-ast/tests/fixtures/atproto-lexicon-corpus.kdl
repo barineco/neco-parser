@@ -1,0 +1,52 @@
+lexicon "app.bsky.actor.getProfile" version=1 xrpc="query" {
+    params {
+        (string)actor required=#true
+        (string)viewer
+    }
+    output "app.bsky.actor.defs#profileViewDetailed" encoding="application/json"
+}
+
+lexicon "com.atproto.server.createSession" version=1 xrpc="procedure" {
+    input {
+        (string)identifier required=#true
+        (string)password required=#true
+        (string)authFactorToken
+    }
+    output {
+        (string)accessJwt
+        (string)refreshJwt
+        (string)handle
+    }
+}
+
+lexicon "app.bsky.actor.defs" version=1 {
+    defs {
+        (object)profileViewDetailed {
+            (string)did required=#true
+            (string)handle required=#true
+            (string)displayName
+            (integer)followersCount
+        }
+    }
+}
+
+lexicon "app.bsky.feed.getTimeline" version=1 xrpc="query" {
+    params {
+        (integer)limit
+        (string)cursor
+    }
+    output "app.bsky.feed.defs#feedViewPost" encoding="application/json"
+}
+
+lexicon "com.atproto.repo.createRecord" version=1 xrpc="procedure" {
+    input {
+        (string)repo required=#true
+        (string)collection required=#true
+        (string)rkey
+        (object)record required=#true
+    }
+    output {
+        (string)uri
+        (string)cid
+    }
+}

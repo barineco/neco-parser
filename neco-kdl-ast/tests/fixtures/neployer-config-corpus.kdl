@@ -1,0 +1,20 @@
+app "kitty" unmanaged=#true {
+    reason "owned outside package manager"
+    target "linux.desktop" {
+        when os="linux" arch="aarch64"
+        package "kitty"
+        pacman "kitty"
+        aur "kitty-git"
+        cargo "nu"
+    }
+    bindings {
+        adapter "@terminal"
+    }
+    provides { service "terminal" }
+    requires { package "fontconfig" }
+    produces { system "desktop-entry" }
+    accepts { user "aoi" }
+    services { service "kitty" }
+    meta { item "interactive" }
+    palette { color "accent" value="blue" }
+}

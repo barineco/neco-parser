@@ -4,7 +4,11 @@ version = 3
 
 [[package]]
 name = "neco-json"
-version = "0.1.1"
+version = "0.1.2"
+
+[[package]]
+name = "neco-json5"
+version = "0.1.0"
 
 [[package]]
 name = "neco-kdl"
@@ -16,3 +20,19 @@ version = "0.1.0"
 dependencies = [
  "neco-kdl",
 ]
+
+[[package]]
+name = "neco-plist"
+version = "0.1.0"
+
+[[package]]
+name = "neco-toml"
+version = "0.1.0"
+
+[[package]]
+name = "neco-xml"
+version = "0.1.0"
+
+[[package]]
+name = "neco-yml"
+version = "0.1.0"

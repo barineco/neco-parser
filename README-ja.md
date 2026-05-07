@@ -2,17 +2,24 @@
 
 [English](README.md)
 
-`neco-parser` は構造化テキスト形式 (KDL, JSON) を型付き表現にパースする Rust crate 群。
+`neco-parser` は構造化テキスト形式を型付き表現へ読み込む Rust crate 群。
 
-`barineco/neco-crates` から切り出された parser 専用 repository で、 各 crate は独立した release cycle を持つ。 外部依存はゼロまたは最小限を志向し、 parser の性質が許す範囲で `no_std` に対応する。
+各パーサー crate は 1 つのテキスト形式を扱い、読み込みと値の参照のための小さな Rust API を提供します。
 
-## Crates
+このリポジトリの crate は、外部 Rust crate に依存しません。
 
-| crate | 概要 | 内部依存 | 主な外部依存 |
-|---|---|---|---|
-| [`neco-kdl`](./neco-kdl) | KDL v2 のパーサー・シリアライザ・document builder | なし | なし |
-| [`neco-json`](./neco-json) | `no_std` 環境向けの最小 JSON コーデック | なし | なし |
-| [`neco-kdl-ast`](./neco-kdl-ast) | KDL v2 文書の structured ast layer ( namespace path / cross-reference / structured naming / dot-prefix 入れ子 ) | `neco-kdl` | なし |
+## crate 一覧
+
+| crate | 概要 | 内部依存 |
+|---|---|---|
+| [`neco-kdl`](./neco-kdl) | KDL v2 のパーサー、シリアライザ、文書ビルダー | なし |
+| [`neco-json`](./neco-json) | JSON のパース、エンコード、型付きフィールド参照 | なし |
+| [`neco-kdl-ast`](./neco-kdl-ast) | KDL v2 文書向け構造参照ヘルパー | `neco-kdl` |
+| [`neco-json5`](./neco-json5) | JSON5 パーサー | なし |
+| [`neco-plist`](./neco-plist) | plist XML パーサー | なし |
+| [`neco-toml`](./neco-toml) | TOML パーサー | なし |
+| [`neco-xml`](./neco-xml) | XML パーサー | なし |
+| [`neco-yml`](./neco-yml) | YAML パーサー | なし |
 
 ## ライセンス
 

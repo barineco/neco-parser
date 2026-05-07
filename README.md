@@ -2,17 +2,24 @@
 
 [日本語](README-ja.md)
 
-`neco-parser` is a collection of Rust crates for parsing structured text formats (KDL and JSON) into typed representations.
+`neco-parser` is a collection of Rust crates for parsing structured text formats into typed representations.
 
-The repository was extracted from `barineco/neco-crates` so that parser crates can release independently. Member crates aim for zero or minimum external dependencies and keep `no_std`-friendly designs where the parser nature allows.
+Each parser crate focuses on one text format and exposes a small Rust API for parsing and value inspection.
+
+The crates in this repository use no external Rust crate dependencies.
 
 ## Crates
 
-| crate | description | internal deps | main external deps |
-|---|---|---|---|
-| [`neco-kdl`](./neco-kdl) | KDL v2 parser, serializer, and document builder | none | none |
-| [`neco-json`](./neco-json) | minimal JSON codec for `no_std` environments | none | none |
-| [`neco-kdl-ast`](./neco-kdl-ast) | structured ast layer over KDL v2 documents (namespace path, cross-reference, structured naming, dot-prefix nesting) | `neco-kdl` | none |
+| crate | description | built on |
+|---|---|---|
+| [`neco-kdl`](./neco-kdl) | KDL v2 parser, serializer, and document builder | none |
+| [`neco-json`](./neco-json) | JSON parser, encoder, and typed field access helpers | none |
+| [`neco-kdl-ast`](./neco-kdl-ast) | Structured traversal helpers for KDL v2 documents | `neco-kdl` |
+| [`neco-json5`](./neco-json5) | JSON5 parser | none |
+| [`neco-plist`](./neco-plist) | plist XML parser | none |
+| [`neco-toml`](./neco-toml) | TOML parser | none |
+| [`neco-xml`](./neco-xml) | XML parser | none |
+| [`neco-yml`](./neco-yml) | YAML parser | none |
 
 ## License
 

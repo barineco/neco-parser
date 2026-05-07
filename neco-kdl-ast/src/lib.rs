@@ -15,5 +15,8 @@ pub use structured::{StructuredFacade, StructuredName, StructuredNode};
 pub use transform::TransformOutcome;
 
 pub mod kdl {
-    pub use neco_kdl::{parse, KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlValue};
+    pub use neco_kdl::{
+        parse, serialize, KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlNumber,
+        KdlValue,
+    };
 }

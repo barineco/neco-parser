@@ -2,7 +2,15 @@
 
 [日本語](README-ja.md)
 
-`neco-json5` parses practical JSON5 documents into a small value enum.
+zero dependency JSON5 subset parser.
+
+## Features
+
+- Object parsing with unquoted, single-quoted, or double-quoted keys
+- Scalar parsing for null, bool, number, and string values
+- Array parsing with comma-separated scalar values
+- Object fields stored in source order as `Vec<(String, Json5Value)>`
+- `ParseError` with byte-oriented position and message
 
 ## Usage
 
@@ -31,13 +39,13 @@ assert!(fields.iter().any(|(key, value)| {
 
 | Item | Description |
 |---|---|
-| `parse(input: &str) -> Result<Json5Value, ParseError>` | Parses practical JSON5 documents |
-| `Json5Value` | Represents scalar, list, and map values |
+| `parse(input: &str) -> Result<Json5Value, ParseError>` | Parses the supported JSON5 subset |
+| `Json5Value` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
 | `ParseError` | Reports byte position and message |
 
 ## Format support
 
-The parser is built for configuration-shaped documents and common scalar, list, and map forms.
+The supported subset covers configuration-shaped JSON5 object documents, common scalar values, and scalar arrays. It keeps duplicate object keys in order and does not implement the full JSON5 grammar.
 
 ## License
 

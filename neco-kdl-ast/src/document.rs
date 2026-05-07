@@ -1,10 +1,19 @@
 use crate::{CrossRef, NsidPath, StructuredNode};
+use neco_ast::StructuredDocument;
 use neco_kdl::{parse as kdl_parse, KdlDocument, KdlError};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Document {
     pub(crate) document: KdlDocument,
+}
+
+impl<'a> StructuredDocument<'a> for Document {
+    type Node = StructuredNode<'a>;
+
+    fn nodes(&'a self) -> Vec<Self::Node> {
+        self.structured_nodes().collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

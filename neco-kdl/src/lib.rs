@@ -1,3 +1,5 @@
+//! Zero dependency KDL v2 parser, serializer, and document builder.
+
 pub mod builder;
 mod comment;
 pub mod convert;

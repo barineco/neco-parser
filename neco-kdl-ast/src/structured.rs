@@ -1,5 +1,7 @@
 use crate::{CrossRef, CrossRefParseError, NsidPath};
+use neco_ast::{StructuredField, StructuredNumber, StructuredValue};
 use neco_kdl::{KdlEntry, KdlNode, KdlValue};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructuredName {
@@ -166,6 +168,77 @@ impl<'a> StructuredFacade<'a> for StructuredNode<'a> {
 
     fn children(&self) -> Vec<Self> {
         StructuredNode::children(self).collect()
+    }
+}
+
+impl<'a> neco_ast::StructuredNode<'a> for StructuredNode<'a> {
+    fn kind(&self) -> Cow<'a, str> {
+        Cow::Borrowed(self.node.name())
+    }
+
+    fn identifier(&self) -> Option<Cow<'a, str>> {
+        self.node.first_string_arg().map(Cow::Borrowed)
+    }
+
+    fn attribute(&self, key: &str) -> Option<StructuredValue<'a>> {
+        self.node.get(key).map(kdl_value_to_structured).or_else(|| {
+            self.node.find_child(key).map(|child| {
+                StructuredValue::Sequence(child.arg_values().map(kdl_value_to_structured).collect())
+            })
+        })
+    }
+
+    fn attribute_str(&self, key: &str) -> Option<Cow<'a, str>> {
+        StructuredNode::attribute_str(self, key).map(Cow::Borrowed)
+    }
+
+    fn attribute_bool(&self, key: &str) -> Option<bool> {
+        StructuredNode::attribute_bool(self, key)
+    }
+
+    fn type_annotation(&self) -> Option<Cow<'a, str>> {
+        self.node.ty().map(Cow::Borrowed)
+    }
+
+    fn children(&self) -> Vec<Self> {
+        StructuredNode::children(self).collect()
+    }
+
+    fn value(&self) -> StructuredValue<'a> {
+        let mut fields = Vec::new();
+        let mut arguments = Vec::new();
+        for entry in self.node.entries() {
+            match entry {
+                KdlEntry::Argument { value, .. } => {
+                    arguments.push(kdl_value_to_structured(value));
+                }
+                KdlEntry::Property { key, value, .. } => {
+                    fields.push(StructuredField {
+                        key: Cow::Borrowed(key.as_str()),
+                        value: kdl_value_to_structured(value),
+                    });
+                }
+            }
+        }
+        if !arguments.is_empty() {
+            fields.push(StructuredField {
+                key: Cow::Borrowed("$args"),
+                value: StructuredValue::Sequence(arguments),
+            });
+        }
+        StructuredValue::Mapping(fields)
+    }
+}
+
+fn kdl_value_to_structured<'a>(value: &'a KdlValue) -> StructuredValue<'a> {
+    match value {
+        KdlValue::String(value) => StructuredValue::String(Cow::Borrowed(value.as_str())),
+        KdlValue::Number(value) => StructuredValue::Number(StructuredNumber::from_parts(
+            Cow::Borrowed(value.raw.as_str()),
+            value.as_f64(),
+        )),
+        KdlValue::Bool(value) => StructuredValue::Bool(*value),
+        KdlValue::Null => StructuredValue::Null,
     }
 }
 

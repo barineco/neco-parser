@@ -2,7 +2,16 @@
 
 [日本語](README-ja.md)
 
-A zero-dependency JSON codec for `no_std` + `alloc` environments, providing parse, encode, typed field access, and lightweight `ToJson` / `FromJson` traits over `JsonValue`.
+zero dependency minimal JSON codec for no_std environments.
+
+## Features
+
+- `#![no_std]` with `alloc`
+- `parse(&[u8]) -> Result<JsonValue, ParseError>`
+- `encode(&JsonValue) -> Result<Vec<u8>, EncodeError>`
+- `JsonValue` variants for null, bool, number, string, array, and object
+- Typed accessors for required and optional object fields
+- Lightweight `ToJson` / `FromJson` traits for common Rust values
 
 ## Usage
 

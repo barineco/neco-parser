@@ -3,12 +3,32 @@
 version = 3
 
 [[package]]
+name = "neco-ast"
+version = "0.1.0"
+
+[[package]]
 name = "neco-json"
 version = "0.1.2"
 
 [[package]]
+name = "neco-json-ast"
+version = "0.1.0"
+dependencies = [
+ "neco-ast",
+ "neco-json",
+]
+
+[[package]]
 name = "neco-json5"
 version = "0.1.0"
+
+[[package]]
+name = "neco-json5-ast"
+version = "0.1.0"
+dependencies = [
+ "neco-ast",
+ "neco-json5",
+]
 
 [[package]]
 name = "neco-kdl"
@@ -16,8 +36,9 @@ version = "0.3.0"
 
 [[package]]
 name = "neco-kdl-ast"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
+ "neco-ast",
  "neco-kdl",
 ]
 
@@ -26,13 +47,45 @@ name = "neco-plist"
 version = "0.1.0"
 
 [[package]]
+name = "neco-plist-ast"
+version = "0.1.0"
+dependencies = [
+ "neco-ast",
+ "neco-plist",
+]
+
+[[package]]
 name = "neco-toml"
 version = "0.1.0"
+
+[[package]]
+name = "neco-toml-ast"
+version = "0.1.0"
+dependencies = [
+ "neco-ast",
+ "neco-toml",
+]
 
 [[package]]
 name = "neco-xml"
 version = "0.1.0"
 
 [[package]]
+name = "neco-xml-ast"
+version = "0.1.0"
+dependencies = [
+ "neco-ast",
+ "neco-xml",
+]
+
+[[package]]
 name = "neco-yml"
 version = "0.1.0"
+
+[[package]]
+name = "neco-yml-ast"
+version = "0.1.0"
+dependencies = [
+ "neco-ast",
+ "neco-yml",
+]

@@ -1,13 +1,16 @@
 [package]
 name = "neco-kdl-ast"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
-description = "necosystems series structured ast layer for KDL v2 documents"
+rust-version = "1.82"
+description = "necosystems series structured AST layer for KDL v2 documents"
 license = "MIT"
 repository = "https://github.com/barineco/neco-parser"
 readme = "README.md"
+documentation = "https://docs.rs/neco-kdl-ast"
 keywords = ["kdl", "ast", "parser"]
 categories = ["parser-implementations", "data-structures"]
 
 [dependencies]
+neco-ast = { path = "../neco-ast", version = "0.1" }
 neco-kdl = { path = "../neco-kdl", version = "0.3" }

@@ -4,6 +4,15 @@
 
 外部依存ゼロ、`no_std` + `alloc` 環境で動作する最小 JSON codec です。パース、エンコード、型安全なフィールドアクセスに加えて、`JsonValue` ベースの軽量な `ToJson` / `FromJson` 変換 trait を提供します。
 
+## 機能
+
+- `#![no_std]` + `alloc` 動作
+- `parse(&[u8]) -> Result<JsonValue, ParseError>`
+- `encode(&JsonValue) -> Result<Vec<u8>, EncodeError>`
+- `JsonValue` で扱う `null` / `bool` / `number` / `string` / `array` / `object`
+- 必須・省略可能なオブジェクトフィールドの型付きアクセサ
+- Rust 値と `JsonValue` の相互変換 `ToJson` / `FromJson` trait
+
 ## 使い方
 
 ### パース

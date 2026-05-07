@@ -5,14 +5,14 @@
 ## 機能
 
 - KDL v2 仕様の完全パース
-  - multiline strings、raw strings、escline
-  - type annotations: `(type)node`
-  - slashdash コメント (`/-`)、ブロックコメント (`/* ... */`)、ネストコメント
+  - `multiline string`、 `raw string`、 `escline`
+  - 型注釈: `(type)node`
+  - `slashdash` コメント (`/-`)、ブロックコメント (`/* ... */`)、ネストコメント
   - `#true` / `#false` / `#null` / `#inf` / `#-inf` / `#nan` キーワード
   - 16 進数・8 進数・2 進数リテラル、アンダースコア区切り
-  - version marker (`/- kdl-version 2`)
-- `serialize()` および `Display` impl によるシリアライズ (roundtrip 安全)
-- 正規化出力(公式テストスイートの expected_kdl と完全一致)
+  - 版マーカー (`/- kdl-version 2`)
+- `serialize()` および `Display` 実装によるシリアライズ ( 往復安全 )
+- 正規化出力 ( 公式テストスイートの `expected_kdl` と完全一致 )
 - フォーマット非依存の `Value` 変換 (`Value` <-> `KdlDocument`)
 - ゼロ外部依存
 - 公式テストスイート全件通過
@@ -80,8 +80,8 @@ pub fn normalize(doc: &KdlDocument) -> String
 - コメントを除去
 - property をキーのアルファベット順に並び替え
 - 重複 property は後勝ち(最後に出現した値を採用)
-- 文字列はすべて quoted string に統一
-- identifier として有効な文字列はアンクォート
+- 文字列はすべて引用付き文字列に統一
+- 識別子として有効な文字列はアンクォート
 - インデントは 4 スペース
 - 数値は 10 進数に変換し、アンダースコアを除去
 - 末尾改行あり
@@ -93,7 +93,7 @@ pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, KdlError>
 pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError>
 ```
 
-`KdlDocument` とフォーマット非依存の `Value` enum を相互変換する。`Value` は KDL と他フォーマット (JSON, CBOR 等) の橋渡し用中間表現として使える。
+`KdlDocument` とフォーマット非依存の `Value` `enum` を相互変換する。`Value` は KDL と他フォーマット (JSON、 `CBOR` 等) の橋渡し用中間表現として使える。
 
 ### 主な型
 
@@ -108,6 +108,6 @@ pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError>
 | `KdlErrorKind` | エラー種別(`UnexpectedChar`、`InvalidEscape`、`UnclosedString` 等) |
 | `Value` | フォーマット非依存の中間表現: `Null`、`Bool`、`Integer`、`Float`、`String`、`Array`、`Object` |
 
-## License
+## ライセンス
 
 MIT

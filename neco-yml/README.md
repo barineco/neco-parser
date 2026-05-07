@@ -2,7 +2,15 @@
 
 [日本語](README-ja.md)
 
-`neco-yml` parses practical YAML documents into a small value enum.
+zero dependency YAML subset parser.
+
+## Features
+
+- Line-oriented `key: value` parsing
+- Empty values followed by `- item` lines converted to lists
+- Scalar parsing for null, bool, number, and string values
+- Field order preserved as `Vec<(String, YmlValue)>`
+- `ParseError` with line-oriented position and message
 
 ## Usage
 
@@ -31,13 +39,13 @@ assert!(fields.iter().any(|(key, value)| {
 
 | Item | Description |
 |---|---|
-| `parse(input: &str) -> Result<YmlValue, ParseError>` | Parses practical YAML documents |
-| `YmlValue` | Represents scalar, list, and map values |
-| `ParseError` | Reports byte position and message |
+| `parse(input: &str) -> Result<YmlValue, ParseError>` | Parses the supported YAML subset |
+| `YmlValue` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
+| `ParseError` | Reports line position and message |
 
 ## Format support
 
-The parser is built for configuration-shaped documents and common scalar, list, and map forms.
+The supported subset covers flat configuration-shaped YAML with scalar values and simple lists. It preserves duplicate keys in source order and does not implement anchors, tags, merge keys, or full YAML document streams.
 
 ## License
 

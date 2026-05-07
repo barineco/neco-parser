@@ -2,7 +2,9 @@
 
 [日本語](README-ja.md)
 
-necosystems series structured ast layer for KDL v2 documents. It builds namespace path, cross-reference, structured naming, and procedural nesting abstractions on top of the `neco-kdl` parser, so consumers can treat KDL as a carrier of structured IR without reimplementing common navigation primitives.
+necosystems series structured AST layer for KDL v2 documents.
+
+It builds namespace path, cross-reference, structured naming, and procedural nesting abstractions on top of the `neco-kdl` parser, and implements the shared `neco-ast` structured access traits.
 
 The crate has two layers of behavior. The reading side exposes accessors over `KdlDocument` that interpret namespace paths, type annotations, property-vs-child duality, and form X / form Y kind keywords without modifying the document. The transformation side accepts a consumer-supplied `Convention` of marker reserved words or prefix characters and rewrites the document along five orthogonal containment axes, each of which is round-trippable.
 
@@ -101,11 +103,13 @@ Each axis pairs one expand and one collapse. All transforms take `&Convention` a
 | `LayoutMode` | `Strict1To1`, `Bundle`, or `CratisDir` |
 | `LayoutViolation` and `LayoutViolationKind` | FS path / NSID consistency report |
 
-### Format-extensible trait
+### Shared structured access
 
 | Item | Description |
 |------|-------------|
-| `StructuredFacade<'a>` | Five-method trait (`kind`, `identifier`, `attribute_str`, `type_annotation`, `children`) implemented by `StructuredNode<'a>` and ready for adapters of other formats |
+| `neco_ast::StructuredNode<'a>` | Shared trait implemented by `StructuredNode<'a>` |
+| `neco_ast::StructuredDocument<'a>` | Shared trait implemented by `Document` |
+| `StructuredFacade<'a>` | Local five-method trait retained for existing KDL callers |
 
 See [docs/INDEX.md](docs/INDEX.md) for the full reference and worked examples.
 

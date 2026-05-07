@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
-description = "zero dependency TOML parser"
+description = "zero dependency TOML subset parser"
 repository = "https://github.com/barineco/neco-parser"
 readme = "README.md"
 documentation = "https://docs.rs/neco-toml"
 keywords = ["toml", "parser", "configuration"]
 categories = ["encoding", "parser-implementations"]
-

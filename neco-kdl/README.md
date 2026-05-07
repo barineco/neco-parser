@@ -2,7 +2,7 @@
 
 [日本語](README-ja.md)
 
-Zero-dependency KDL v2 parser and serializer. Suitable for configuration files and DSL parsing.
+zero dependency KDL v2 parser, serializer, and document builder.
 
 ## Features
 

@@ -2,7 +2,15 @@
 
 [English](README.md)
 
-`neco-json5` は実用的な JSON5 文書を読み込みます。小さな値型、`parse` 関数、`ParseError` 型を提供します。
+`neco-json5` は外部依存ゼロの JSON5 部分集合パーサーです。
+
+## 機能
+
+- 引用なし / 単引用 / 二重引用のキーを持つオブジェクト解析
+- `null` / `bool` / `number` / `string` のスカラー解析
+- カンマ区切りのスカラー値による配列解析
+- オブジェクトフィールドを `Vec<(String, Json5Value)>` として出現順で保持
+- バイト位置とメッセージを持つ `ParseError`
 
 ## 使い方
 
@@ -31,13 +39,13 @@ assert!(fields.iter().any(|(key, value)| {
 
 | 項目 | 説明 |
 |---|---|
-| `parse(input: &str) -> Result<Json5Value, ParseError>` | 実用的な JSON5 文書の読み込み |
-| `Json5Value` | スカラー、リスト、マップの値 |
+| `parse(input: &str) -> Result<Json5Value, ParseError>` | 対応する JSON5 部分集合の読み込み |
+| `Json5Value` | `Null`、 `Bool`、 `Number(f64)`、 `String`、 `List`、 順序付き `Map` |
 | `ParseError` | バイト位置とメッセージ |
 
 ## 対応範囲
 
-設定ファイル形の文書と、よく使われるスカラー、リスト、マップ形式を扱います。
+設定ファイル形の JSON5 オブジェクト文書、 よく使われるスカラー値、 スカラー配列を扱います。 重複するオブジェクトキーは出現順で保持し、 JSON5 文法全体は実装しません。
 
 ## ライセンス
 

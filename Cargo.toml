@@ -1,13 +1,20 @@
 [workspace]
 members = [
+    "neco-ast",
     "neco-json",
+    "neco-json-ast",
     "neco-json5",
+    "neco-json5-ast",
     "neco-kdl",
     "neco-kdl-ast",
     "neco-plist",
+    "neco-plist-ast",
     "neco-toml",
+    "neco-toml-ast",
     "neco-xml",
+    "neco-xml-ast",
     "neco-yml",
+    "neco-yml-ast",
 ]
 
 resolver = "2"

@@ -1,0 +1,16 @@
+[package]
+name = "neco-toml-ast"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+description = "necosystems series structured access layer for TOML values"
+repository = "https://github.com/barineco/neco-parser"
+readme = "README.md"
+documentation = "https://docs.rs/neco-toml-ast"
+keywords = ["toml", "ast", "parser"]
+categories = ["parser-implementations", "data-structures"]
+
+[dependencies]
+neco-ast = { path = "../neco-ast", version = "0.1" }
+neco-toml = { path = "../neco-toml", version = "0.1" }

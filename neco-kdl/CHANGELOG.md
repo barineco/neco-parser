@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- KDL v2 parser API を `builder`, `normalize`, `convert` まで含む公開面へ整理。
+- `KdlDocumentBuilder` / `KdlNodeBuilder` による文書構築 API を追加。
+- `KdlValue` と `Value` の相互変換、公式 test suite、README / metadata を公開前水準へ更新。
+
 ## 0.2.0
 
 - `serialize` 関数と `Display` impl を追加 (parse → serialize の roundtrip が可能に)

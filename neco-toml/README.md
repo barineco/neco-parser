@@ -2,7 +2,15 @@
 
 [日本語](README-ja.md)
 
-`neco-toml` parses practical TOML documents into a small value enum.
+zero dependency TOML subset parser.
+
+## Features
+
+- Line-oriented `key = value` parsing
+- Empty values followed by `- item` lines converted to lists
+- Scalar parsing for null, bool, number, and string values
+- Field order preserved as `Vec<(String, TomlValue)>`
+- `ParseError` with line-oriented position and message
 
 ## Usage
 
@@ -31,13 +39,13 @@ assert!(fields.iter().any(|(key, value)| {
 
 | Item | Description |
 |---|---|
-| `parse(input: &str) -> Result<TomlValue, ParseError>` | Parses practical TOML documents |
-| `TomlValue` | Represents scalar, list, and map values |
-| `ParseError` | Reports byte position and message |
+| `parse(input: &str) -> Result<TomlValue, ParseError>` | Parses the supported TOML subset |
+| `TomlValue` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
+| `ParseError` | Reports line position and message |
 
 ## Format support
 
-The parser is built for configuration-shaped documents and common scalar, list, and map forms.
+The supported subset covers flat configuration-shaped TOML with scalar values and simple arrays. It preserves duplicate keys in source order and does not implement the full TOML v1.0 grammar.
 
 ## License
 

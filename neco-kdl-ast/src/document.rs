@@ -1,4 +1,4 @@
-use crate::{CrossRef, NsidPath, StructuredNode};
+use crate::{AxisForm, Convention, CrossRef, Marker, NsidPath, PropertyChildForm, StructuredNode};
 use neco_ast::StructuredDocument;
 use neco_kdl::{parse as kdl_parse, KdlDocument, KdlError};
 use std::path::{Path, PathBuf};
@@ -72,6 +72,24 @@ impl Document {
     pub fn find_by_identifier(&self, identifier: &NsidPath) -> Option<StructuredNode<'_>> {
         self.structured_nodes()
             .find(|node| node.structured_name().identifier == *identifier)
+    }
+
+    /// Convention の per-axis 正規形宣言に従って軸 1-5 の expand / collapse を crate 規定順序で適用。
+    ///
+    /// 軸間順序は `軸 5 ( kind keyword ) → 軸 4 ( type annotation ) → 軸 1 ( namespace ) →
+    /// 軸 2 ( procedure ) → 軸 3 ( property-child )` で固定 ( marker 境界保護順 )。
+    /// 軸 ごとの `AxisForm::Off` / `PropertyChildForm::Off` は no-op。
+    /// 軸 4 / 5 で plain `Expand` / `Collapse` ( marker なし ) は no-op、
+    /// 軸 1 / 2 で `*WithMarker` variant も no-op。
+    /// 軸 2 ( procedure ) は Convention の `Marker::Kind` を per-kind dot-chain target として再利用する。
+    pub fn render_as(&self, conv: &Convention) -> Document {
+        let mut doc = self.clone();
+        doc = apply_axis_5(doc, &conv.kind_keyword_form, conv);
+        doc = apply_axis_4(doc, &conv.type_annotation_form, conv);
+        doc = apply_axis_1(doc, &conv.namespace_form, conv);
+        doc = apply_axis_2(doc, &conv.procedure_form, conv);
+        doc = apply_axis_3(doc, &conv.property_child_form, conv);
+        doc
     }
 
     pub fn resolve(&self, cross_ref: &CrossRef) -> Option<StructuredNode<'_>> {
@@ -202,6 +220,60 @@ fn find_child_identifier<'a>(
         }
     }
     None
+}
+
+fn apply_axis_1(doc: Document, form: &AxisForm, conv: &Convention) -> Document {
+    match form {
+        AxisForm::Off | AxisForm::ExpandWithMarker(_) | AxisForm::CollapseWithMarker(_) => doc,
+        AxisForm::Expand => doc.nest(conv).0,
+        AxisForm::Collapse => doc.flatten(conv).0,
+    }
+}
+
+fn apply_axis_2(doc: Document, form: &AxisForm, conv: &Convention) -> Document {
+    match form {
+        AxisForm::Off | AxisForm::ExpandWithMarker(_) | AxisForm::CollapseWithMarker(_) => doc,
+        AxisForm::Expand => kind_markers(conv).into_iter().fold(doc, |d, k| {
+            d.expand_dot_chain(&k, conv).0
+        }),
+        AxisForm::Collapse => kind_markers(conv).into_iter().fold(doc, |d, k| {
+            d.collapse_dot_chain(&k, conv).0
+        }),
+    }
+}
+
+fn apply_axis_3(doc: Document, form: &PropertyChildForm, conv: &Convention) -> Document {
+    match form {
+        PropertyChildForm::Off => doc,
+        PropertyChildForm::Expand => doc.expand_properties(conv).0,
+        PropertyChildForm::Collapse => doc.collapse_properties(conv).0,
+    }
+}
+
+fn apply_axis_4(doc: Document, form: &AxisForm, conv: &Convention) -> Document {
+    match form {
+        AxisForm::Off | AxisForm::Expand | AxisForm::Collapse => doc,
+        AxisForm::ExpandWithMarker(m) => doc.expand_type_annotations(m, conv).0,
+        AxisForm::CollapseWithMarker(m) => doc.collapse_type_annotations(m, conv).0,
+    }
+}
+
+fn apply_axis_5(doc: Document, form: &AxisForm, conv: &Convention) -> Document {
+    match form {
+        AxisForm::Off | AxisForm::Expand | AxisForm::Collapse => doc,
+        AxisForm::ExpandWithMarker(m) => doc.expand_kind_keyword(m, conv).0,
+        AxisForm::CollapseWithMarker(m) => doc.collapse_kind_keyword(m, conv).0,
+    }
+}
+
+fn kind_markers(conv: &Convention) -> Vec<String> {
+    conv.markers
+        .iter()
+        .filter_map(|marker| match marker {
+            Marker::Kind(k) => Some(k.clone()),
+            Marker::Prefix(_) => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]

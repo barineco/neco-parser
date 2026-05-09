@@ -69,8 +69,10 @@ let (doc, _) = doc.collapse_type_annotations(&app_marker, &conv);
 | `StructuredName` | `{ kind: Option<NsidPath>, identifier: NsidPath }`、 `form X` と `form Y` を統一表現 |
 | `StructuredNode<'a>` | `KdlNode` の借用ビュー、 `kind` / `identifier` / 入れ子の深さを解釈 |
 | `Document` | `KdlDocument` の所有ラッパー、 索引参照 / 解決 / 配置検査 / 変換を提供 |
-| `Convention` | 利用者が宣言する予約 `Marker` のリスト、 変換が参照する |
+| `Convention` | 利用者が宣言する予約 `Marker` のリスト + 軸ごとの正規形宣言 |
 | `Marker` | `Kind(String)` または `Prefix(char)` の予約識別子、 包みの修飾子として機能 |
+| `AxisForm` | 軸 1 / 2 / 4 / 5 用の正規形宣言: `Off` / `Expand` / `Collapse` / `ExpandWithMarker(Marker)` / `CollapseWithMarker(Marker)` |
+| `PropertyChildForm` | 軸 3 ( `property` と `child` ) 専用の正規形宣言: `Off` / `Expand` / `Collapse` ( 融合形のみ、 enum axiom ) |
 
 ### 読み取りアクセサ
 
@@ -82,7 +84,7 @@ let (doc, _) = doc.collapse_type_annotations(&app_marker, &conv);
 | `type_annotation` | 型注釈 |
 | `structured_name` / `structured_name_form_x` / `structured_name_form_y` | `kind` キーワード |
 
-### 変換 ( 10 メソッド )
+### 変換 ( 10 メソッド + render_as orchestration )
 
 各軸が展開と畳込みの対を持つ。 全変換は `&Convention` を取り、 `Marker` 境界を尊重する。 登録された `Marker` の直下の子は保護され、 孫以下は通常処理。
 
@@ -93,6 +95,8 @@ let (doc, _) = doc.collapse_type_annotations(&app_marker, &conv);
 | `property` と `child` | `Document::expand_properties` | `Document::collapse_properties` |
 | 型注釈 | `Document::expand_type_annotations` | `Document::collapse_type_annotations` |
 | `kind` キーワード | `Document::expand_kind_keyword` | `Document::collapse_kind_keyword` |
+
+`Document::render_as(&Convention) -> Document` は `Convention` の per-axis 正規形宣言を読み、 軸 5 → 4 → 1 → 2 → 3 の規定順序 ( marker 境界保護順 ) で per-axis 変換を orchestrate する。 既定 `Convention` は全軸 `Off` で、 `render_as(&Convention::default())` は identity ( 既存 read accessor の振る舞い完全互換 )。
 
 ### 配置検査
 

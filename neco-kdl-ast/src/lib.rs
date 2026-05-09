@@ -7,9 +7,10 @@ mod nsid;
 mod structured;
 mod transform;
 
-pub use convention::{Convention, Marker};
+pub use convention::{AxisForm, Convention, Marker, PropertyChildForm};
 pub use cross_ref::{CrossRef, CrossRefParseError};
 pub use document::{Document, LayoutMode, LayoutViolation, LayoutViolationKind};
+// `Document::render_as(&Convention) -> Document` は Document の inherent method として上記 export に同梱
 pub use nsid::NsidPath;
 pub use structured::{StructuredFacade, StructuredName, StructuredNode};
 pub use transform::TransformOutcome;

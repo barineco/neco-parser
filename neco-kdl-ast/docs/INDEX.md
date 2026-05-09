@@ -1,6 +1,6 @@
 # neco-kdl-ast ドキュメント索引
 
-`neco-kdl` parser の上に載る構造化 AST layer。 名前空間の path、 参照、 構造化命名、 手続きの入れ子、 property / type annotation / kind keyword を含む 5 軸の同型変換を提供し、KDL 固有 helper と共有 `neco-ast` trait 実装を同時に持つ。
+`neco-kdl` parser の上に載る構造化 AST layer。 名前空間の path、 参照、 構造化命名、 手続きの入れ子、 property / type annotation / kind keyword を含む 5 軸の同型変換を提供し、KDL 固有のアクセサ群と共有 `neco-ast` trait 実装を同時に持つ。
 
 ## ドキュメント
 
@@ -20,3 +20,5 @@
 | `neco-ast` の共有構造参照 trait との関係を知りたい | [architecture/overview § 共有構造参照](architecture/overview.md) |
 | FS path と 名前空間パス の対応を知りたい | [reference/syntax § FS path との対応](reference/syntax.md) |
 | AT Protocol Lexicon を KDL で表現する例を見たい | [reference/syntax § form Y と type annotation](reference/syntax.md) |
+| `render_as` で per-axis 正規形を 一括 normalize したい | [reference/syntax § Convention の正規形宣言](reference/syntax.md) |
+| `Convention` の 軸 OFF / 融合形 axiom を知りたい | [reference/syntax § Convention の正規形宣言](reference/syntax.md) |

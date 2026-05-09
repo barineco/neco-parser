@@ -71,8 +71,10 @@ The marker boundary protects the immediate child of `:app` from namespace expans
 | `StructuredName` | `{ kind: Option<NsidPath>, identifier: NsidPath }` over form X and form Y |
 | `StructuredNode<'a>` | Borrowed view over `KdlNode` exposing kind, identifier, and procedural depth |
 | `Document` | Owned wrapper over `KdlDocument` for indexed lookup, resolve, layout verification, and transforms |
-| `Convention` | Consumer-supplied list of reserved markers used by transforms |
+| `Convention` | Consumer-supplied per-axis normal-form declaration plus reserved marker list |
 | `Marker` | `Kind(String)` or `Prefix(char)` reserved name acting as a containment modifier |
+| `AxisForm` | `Off` / `Expand` / `Collapse` / `ExpandWithMarker(Marker)` / `CollapseWithMarker(Marker)` for axes 1 / 2 / 4 / 5 |
+| `PropertyChildForm` | `Off` / `Expand` / `Collapse` for axis 3 (fused-form-only by enum axiom) |
 
 ### Read accessors
 
@@ -84,7 +86,7 @@ The marker boundary protects the immediate child of `:app` from namespace expans
 | `type_annotation` | type annotation |
 | `structured_name` / `structured_name_form_x` / `structured_name_form_y` | kind keyword |
 
-### Transforms (10 methods)
+### Transforms (10 methods + render_as orchestration)
 
 Each axis pairs one expand and one collapse. All transforms take `&Convention` and respect marker boundaries: the immediate child of any registered marker is preserved while deeper levels are processed normally.
 
@@ -95,6 +97,8 @@ Each axis pairs one expand and one collapse. All transforms take `&Convention` a
 | property-child | `Document::expand_properties` | `Document::collapse_properties` |
 | type annotation | `Document::expand_type_annotations` | `Document::collapse_type_annotations` |
 | kind keyword | `Document::expand_kind_keyword` | `Document::collapse_kind_keyword` |
+
+`Document::render_as(&Convention) -> Document` reads the per-axis normal-form declarations on the supplied convention and orchestrates the per-axis transforms in the fixed order axis 5 → 4 → 1 → 2 → 3 (marker-boundary-preserving). The default convention has every axis set to `Off`, so `render_as(&Convention::default())` is identity and existing read accessors retain backward-compatible behavior.
 
 ### Layout verification
 

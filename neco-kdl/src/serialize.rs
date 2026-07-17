@@ -1,6 +1,6 @@
 use core::fmt::{self, Write};
 
-use crate::scan::{is_disallowed, is_identifier_char, is_newline};
+use crate::scan::{is_disallowed, is_identifier_char, is_newline, is_reserved_keyword};
 use crate::{KdlDocument, KdlEntry, KdlNode, KdlValue};
 
 /// KDL v2 ドキュメントを文字列へシリアライズする。
@@ -65,7 +65,7 @@ fn write_node(f: &mut fmt::Formatter<'_>, node: &KdlNode, depth: usize) -> fmt::
     }
 
     match node.children() {
-        Some(children) if !children.is_empty() => {
+        Some(children) => {
             writeln!(f, " {{")?;
             for child in children {
                 write_node(f, child, depth + 1)?;
@@ -126,9 +126,8 @@ fn can_be_bare_identifier(value: &str) -> bool {
         return false;
     }
 
-    match value {
-        "true" | "false" | "null" | "inf" | "-inf" | "nan" => return false,
-        _ => {}
+    if is_reserved_keyword(value) {
+        return false;
     }
 
     if first.is_ascii_digit() {

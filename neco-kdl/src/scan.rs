@@ -32,8 +32,6 @@ impl<'a> Scanner<'a> {
     pub(crate) fn advance(&mut self) -> Option<char> {
         let (_, ch) = self.current?;
         if is_newline(ch) {
-            // CR+LF は consume_newline で 1 改行として処理する。
-            // advance 単独で CR を踏んだ場合も行を進める。
             self.line += 1;
             self.col = 1;
         } else {
@@ -96,7 +94,6 @@ impl<'a> Scanner<'a> {
                 let was_cr = ch == '\r';
                 self.advance(); // 行が進む
                 if was_cr && self.peek() == Some('\n') {
-                    // CRLF: LF を消費するが行はもう進んでいるので col リセットのみ
                     self.current = self.chars.next();
                     self.col = 1;
                 }
@@ -186,6 +183,30 @@ pub(crate) fn is_identifier_char(ch: char) -> bool {
         )
 }
 
+pub(crate) const RESERVED_KEYWORDS: [&str; 6] = ["true", "false", "null", "inf", "-inf", "nan"];
+
+pub(crate) fn is_reserved_keyword(value: &str) -> bool {
+    RESERVED_KEYWORDS.contains(&value)
+}
+
+pub(crate) const RADIX_PREFIXES: [(char, u32); 3] = [('x', 16), ('o', 8), ('b', 2)];
+
+pub(crate) fn radix_for_prefix(prefix: char) -> Option<u32> {
+    RADIX_PREFIXES
+        .iter()
+        .find_map(|(candidate, radix)| (*candidate == prefix).then_some(*radix))
+}
+
+pub(crate) fn split_radix_prefix(value: &str) -> Option<(u32, &str)> {
+    let bytes = value.as_bytes();
+    if bytes.first() != Some(&b'0') {
+        return None;
+    }
+    let prefix = bytes.get(1).copied()?.to_ascii_lowercase() as char;
+    let radix = radix_for_prefix(prefix)?;
+    Some((radix, &value[2..]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +261,22 @@ mod tests {
         assert!(!is_identifier_char('='));
         assert!(!is_identifier_char(' '));
         assert!(!is_identifier_char('\n'));
+    }
+
+    #[test]
+    fn reserved_keywords_are_centralized() {
+        for keyword in RESERVED_KEYWORDS {
+            assert!(is_reserved_keyword(keyword));
+        }
+        assert!(!is_reserved_keyword("keyword"));
+    }
+
+    #[test]
+    fn radix_prefixes_map_to_radices() {
+        assert_eq!(split_radix_prefix("0xff"), Some((16, "ff")));
+        assert_eq!(split_radix_prefix("0O70"), Some((8, "70")));
+        assert_eq!(split_radix_prefix("0b10"), Some((2, "10")));
+        assert_eq!(split_radix_prefix("10"), None);
     }
 
     #[test]

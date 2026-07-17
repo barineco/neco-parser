@@ -128,6 +128,15 @@ impl<'a> StructuredNode<'a> {
         })
     }
 
+    pub fn attribute_int(&self, key: &str) -> Option<i64> {
+        self.node.int_prop(key).or_else(|| {
+            self.node
+                .find_child(key)
+                .and_then(KdlNode::first_arg)
+                .and_then(KdlValue::as_i64)
+        })
+    }
+
     pub fn dot_chain_depth(&self) -> usize {
         self.node.name().chars().take_while(|c| *c == '.').count()
     }
@@ -234,7 +243,7 @@ fn kdl_value_to_structured<'a>(value: &'a KdlValue) -> StructuredValue<'a> {
     match value {
         KdlValue::String(value) => StructuredValue::String(Cow::Borrowed(value.as_str())),
         KdlValue::Number(value) => StructuredValue::Number(StructuredNumber::from_parts(
-            Cow::Borrowed(value.raw.as_str()),
+            Cow::Borrowed(value.raw()),
             value.as_f64(),
         )),
         KdlValue::Bool(value) => StructuredValue::Bool(*value),

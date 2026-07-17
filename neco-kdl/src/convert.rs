@@ -17,7 +17,45 @@ pub enum Value {
     Object(Vec<(String, Value)>),
 }
 
-use crate::{KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlNumber, KdlValue};
+use crate::{KdlDocument, KdlEntry, KdlNode, KdlNumber, KdlValue};
+
+#[derive(Debug, Clone, PartialEq)]
+/// Failure returned when a KDL document and `Value` cannot be converted losslessly.
+pub struct ValueError {
+    /// The conversion rule that rejected the input.
+    pub reason: ValueErrorReason,
+}
+
+impl ValueError {
+    fn new(reason: ValueErrorReason) -> Self {
+        Self { reason }
+    }
+
+    /// Returns the conversion rule that rejected the input.
+    pub fn reason(&self) -> &ValueErrorReason {
+        &self.reason
+    }
+}
+
+impl core::fmt::Display for ValueError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "KDL value conversion failed: {:?}", self.reason)
+    }
+}
+
+impl std::error::Error for ValueError {}
+
+#[derive(Debug, Clone, PartialEq)]
+/// Explicit reasons that a KDL document and `Value` cannot be converted losslessly.
+pub enum ValueErrorReason {
+    TopLevelMustBeObject,
+    NestedCollectionInArray,
+    EmptyArrayCannotBeConverted,
+    PropertyCannotBeConverted,
+    MixedArgumentsAndChildren,
+    UnsupportedTypeAnnotation(String),
+    NumberCannotBeConverted(String),
+}
 
 /// Converts a `Value` into a `KdlDocument`.
 ///
@@ -31,8 +69,9 @@ use crate::{KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlNumber, K
 ///
 /// # Errors
 ///
-/// Returns an error if `value` is not a `Value::Object`.
-pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, KdlError> {
+/// Returns an error for a non-Object top level, an empty Array, a nested
+/// collection inside an Array, or a number that cannot be constructed.
+pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, ValueError> {
     match value {
         Value::Object(fields) => {
             let nodes = fields
@@ -41,7 +80,7 @@ pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, KdlError> {
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(KdlDocument { nodes })
         }
-        _ => Err(make_conv_error("top-level value must be an Object")),
+        _ => Err(ValueError::new(ValueErrorReason::TopLevelMustBeObject)),
     }
 }
 
@@ -60,7 +99,7 @@ pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, KdlError> {
 ///
 /// Returns an error if a node cannot be decoded (e.g., mixed arguments and
 /// children, or an unrecognised value type).
-pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError> {
+pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, ValueError> {
     let mut fields = Vec::with_capacity(doc.nodes.len());
     for node in &doc.nodes {
         let val = kdl_node_to_value(node)?;
@@ -68,10 +107,6 @@ pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError> {
     }
     Ok(Value::Object(fields))
 }
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 /// A sentinel type-annotation string used to distinguish `Value::Float` from
 /// `Value::Integer` when both are stored as KDL numbers.
@@ -81,9 +116,8 @@ pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError> {
 const FLOAT_TYPE: &str = "f64";
 
 /// Converts a single key-value pair into a `KdlNode`.
-fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, KdlError> {
+fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, ValueError> {
     match value {
-        // Nested object → children block
         Value::Object(fields) => {
             let children = fields
                 .iter()
@@ -97,8 +131,12 @@ fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, KdlError> {
             })
         }
 
-        // Array → multiple positional arguments
         Value::Array(items) => {
+            if items.is_empty() {
+                return Err(ValueError::new(
+                    ValueErrorReason::EmptyArrayCannotBeConverted,
+                ));
+            }
             let entries = items
                 .iter()
                 .map(primitive_to_argument)
@@ -111,7 +149,6 @@ fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, KdlError> {
             })
         }
 
-        // Primitive → single positional argument
         _ => {
             let entry = primitive_to_argument(value)?;
             Ok(KdlNode {
@@ -128,7 +165,7 @@ fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, KdlError> {
 ///
 /// `Value::Float` gets a `(f64)` type annotation so that round-trip decoding
 /// can distinguish it from `Value::Integer`.
-fn primitive_to_argument(value: &Value) -> Result<KdlEntry, KdlError> {
+fn primitive_to_argument(value: &Value) -> Result<KdlEntry, ValueError> {
     match value {
         Value::Null => Ok(KdlEntry::Argument {
             ty: None,
@@ -140,45 +177,61 @@ fn primitive_to_argument(value: &Value) -> Result<KdlEntry, KdlError> {
         }),
         Value::Integer(i) => Ok(KdlEntry::Argument {
             ty: None,
-            value: KdlValue::Number(i64_to_kdl_number(*i)),
+            value: KdlValue::Number(i64_to_kdl_number(*i)?),
         }),
         Value::Float(f) => Ok(KdlEntry::Argument {
-            // Use a (f64) type annotation to distinguish from Integer on decode.
             ty: Some(FLOAT_TYPE.to_string()),
-            value: KdlValue::Number(f64_to_kdl_number(*f)),
+            value: KdlValue::Number(f64_to_kdl_number(*f)?),
         }),
         Value::String(s) => Ok(KdlEntry::Argument {
             ty: None,
             value: KdlValue::String(s.clone()),
         }),
-        Value::Array(_) | Value::Object(_) => Err(make_conv_error(
-            "nested Array/Object inside Array is not supported",
-        )),
+        Value::Array(_) | Value::Object(_) => {
+            Err(ValueError::new(ValueErrorReason::NestedCollectionInArray))
+        }
     }
 }
 
 /// Decodes a `KdlNode` into a `Value`.
-fn kdl_node_to_value(node: &KdlNode) -> Result<Value, KdlError> {
-    // Collect positional arguments only (properties are ignored for now).
+fn kdl_node_to_value(node: &KdlNode) -> Result<Value, ValueError> {
+    if node
+        .entries
+        .iter()
+        .any(|entry| matches!(entry, KdlEntry::Property { .. }))
+    {
+        return Err(ValueError::new(ValueErrorReason::PropertyCannotBeConverted));
+    }
+    if let Some(ty) = &node.ty {
+        return Err(ValueError::new(
+            ValueErrorReason::UnsupportedTypeAnnotation(ty.clone()),
+        ));
+    }
+    for entry in &node.entries {
+        let KdlEntry::Argument {
+            ty: Some(ty),
+            value,
+        } = entry
+        else {
+            continue;
+        };
+        if ty != FLOAT_TYPE || !matches!(value, KdlValue::Number(_)) {
+            return Err(ValueError::new(
+                ValueErrorReason::UnsupportedTypeAnnotation(ty.clone()),
+            ));
+        }
+    }
+
     let args: Vec<&KdlEntry> = node
         .entries
         .iter()
         .filter(|e| matches!(e, KdlEntry::Argument { .. }))
         .collect();
 
-    let has_children = node
-        .children
-        .as_ref()
-        .map(|c| !c.is_empty())
-        .unwrap_or(false);
+    match (args.len(), node.children.as_ref()) {
+        (0, None) => Ok(Value::Null),
 
-    match (args.len(), has_children) {
-        // No arguments and no children → null
-        (0, false) => Ok(Value::Null),
-
-        // Children block only → nested Object
-        (0, true) => {
-            let children = node.children.as_ref().unwrap();
+        (0, Some(children)) => {
             let mut fields = Vec::with_capacity(children.len());
             for child in children {
                 let v = kdl_node_to_value(child)?;
@@ -187,11 +240,9 @@ fn kdl_node_to_value(node: &KdlNode) -> Result<Value, KdlError> {
             Ok(Value::Object(fields))
         }
 
-        // Exactly one argument → scalar
-        (1, false) => kdl_entry_to_value(args[0]),
+        (1, None) => kdl_entry_to_value(args[0]),
 
-        // Multiple arguments → Array
-        (_, false) => {
+        (_, None) => {
             let items = args
                 .iter()
                 .map(|e| kdl_entry_to_value(e))
@@ -199,21 +250,16 @@ fn kdl_node_to_value(node: &KdlNode) -> Result<Value, KdlError> {
             Ok(Value::Array(items))
         }
 
-        // Both arguments and children → ambiguous, treat as error
-        (_, true) => Err(make_conv_error(
-            "node has both positional arguments and children, which is not supported",
-        )),
+        (_, Some(_)) => Err(ValueError::new(ValueErrorReason::MixedArgumentsAndChildren)),
     }
 }
 
 /// Decodes a single `KdlEntry::Argument` into a scalar `Value`.
-fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, KdlError> {
+fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, ValueError> {
     let (ty, kdl_val) = match entry {
         KdlEntry::Argument { ty, value } => (ty.as_deref(), value),
         KdlEntry::Property { .. } => {
-            return Err(make_conv_error(
-                "expected positional argument, got property",
-            ));
+            return Err(ValueError::new(ValueErrorReason::PropertyCannotBeConverted))
         }
     };
 
@@ -222,19 +268,21 @@ fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, KdlError> {
         KdlValue::Bool(b) => Ok(Value::Bool(*b)),
         KdlValue::String(s) => Ok(Value::String(s.clone())),
         KdlValue::Number(n) => {
-            // A (f64) type annotation marks an explicitly floating-point value.
             if ty == Some(FLOAT_TYPE) {
-                match n.as_f64 {
+                match n.as_f64() {
                     Some(f) => Ok(Value::Float(f)),
-                    None => Err(make_conv_error("(f64)-annotated number has no f64 value")),
+                    None => Err(ValueError::new(ValueErrorReason::NumberCannotBeConverted(
+                        n.raw().to_string(),
+                    ))),
                 }
             } else {
-                // No annotation: prefer integer interpretation, fall back to float.
-                match n.as_i64 {
+                match n.as_i64() {
                     Some(i) => Ok(Value::Integer(i)),
-                    None => match n.as_f64 {
+                    None => match n.as_f64() {
                         Some(f) => Ok(Value::Float(f)),
-                        None => Err(make_conv_error("number has neither i64 nor f64 value")),
+                        None => Err(ValueError::new(ValueErrorReason::NumberCannotBeConverted(
+                            n.raw().to_string(),
+                        ))),
                     },
                 }
             }
@@ -242,28 +290,16 @@ fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, KdlError> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Number construction helpers
-// ---------------------------------------------------------------------------
-
-fn i64_to_kdl_number(i: i64) -> KdlNumber {
-    KdlNumber {
-        raw: i.to_string(),
-        as_i64: Some(i),
-        as_f64: Some(i as f64),
-    }
+fn i64_to_kdl_number(i: i64) -> Result<KdlNumber, ValueError> {
+    let raw = i.to_string();
+    KdlNumber::new(raw.clone(), Some(i), Some(i as f64))
+        .map_err(|_| ValueError::new(ValueErrorReason::NumberCannotBeConverted(raw)))
 }
 
-fn f64_to_kdl_number(f: f64) -> KdlNumber {
-    // Produce a raw string that round-trips through the KDL parser.
-    // We always emit at least one decimal digit so the parser recognises it as
-    // a float (e.g. "2.5", "1.0").
+fn f64_to_kdl_number(f: f64) -> Result<KdlNumber, ValueError> {
     let raw = format_f64(f);
-    KdlNumber {
-        raw,
-        as_i64: None, // intentionally None to distinguish from Integer
-        as_f64: Some(f),
-    }
+    KdlNumber::new(raw.clone(), None, Some(f))
+        .map_err(|_| ValueError::new(ValueErrorReason::NumberCannotBeConverted(raw)))
 }
 
 /// Formats an f64 as a KDL-parseable decimal string with an explicit dot.
@@ -279,9 +315,6 @@ fn format_f64(f: f64) -> String {
         };
     }
 
-    // Use Rust's default Display which includes the decimal point when
-    // needed.  For whole numbers like 1.0, Display produces "1" : we
-    // append ".0" explicitly.
     let s = format!("{f}");
     if s.contains('.') || s.contains('e') || s.contains('E') || s.starts_with('#') {
         s
@@ -290,44 +323,14 @@ fn format_f64(f: f64) -> String {
     }
 }
 
-/// Creates a conversion error.  KdlError requires line/col even for
-/// non-parse errors; we use 0:0 as a sentinel for "not from parsing".
-fn make_conv_error(msg: &str) -> KdlError {
-    // We repurpose `UnexpectedChar` with a NUL sentinel and encode the message
-    // in a way callers can detect. Since `KdlErrorKind` has no `Custom`
-    // variant, we use `UnexpectedChar('\0')` as the closest available carrier.
-    // The public API exposes `kind()` and `Display`, so callers should use
-    // those. We cannot add a Custom variant without modifying value.rs, which
-    // is out of scope for T2.
-    //
-    // For now use UnexpectedEof as a placeholder : it is easily distinguished
-    // from parse errors by line == 0.
-    // TODO: Add a Custom(String) variant to KdlErrorKind to carry the message.
-    let _ = msg;
-    KdlError {
-        line: 0,
-        col: 0,
-        kind: KdlErrorKind::UnexpectedEof,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Helper: round-trip a Value through KdlDocument and back.
     fn roundtrip(v: &Value) -> Value {
         let doc = value_to_kdl_document(v).expect("encode failed");
         kdl_document_to_value(&doc).expect("decode failed")
     }
-
-    // -----------------------------------------------------------------------
-    // Single scalar node: text "hello"
-    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_single_string_node() {
@@ -338,10 +341,6 @@ mod tests {
         let output = roundtrip(&input);
         assert_eq!(input, output);
     }
-
-    // -----------------------------------------------------------------------
-    // Multiple-value node: langs "en" "ja"  →  Array
-    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_array_node() {
@@ -355,10 +354,6 @@ mod tests {
         let output = roundtrip(&input);
         assert_eq!(input, output);
     }
-
-    // -----------------------------------------------------------------------
-    // Nested Object → children block
-    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_nested_object() {
@@ -374,16 +369,11 @@ mod tests {
         assert_eq!(input, output);
     }
 
-    // -----------------------------------------------------------------------
-    // Integer vs Float are preserved
-    // -----------------------------------------------------------------------
-
     #[test]
     fn roundtrip_integer() {
         let input = Value::Object(vec![("count".to_string(), Value::Integer(42))]);
         let output = roundtrip(&input);
         assert_eq!(input, output);
-        // Verify the decoded value is still Integer, not Float.
         match &output {
             Value::Object(fields) => {
                 assert_eq!(fields[0].1, Value::Integer(42));
@@ -409,6 +399,53 @@ mod tests {
     }
 
     #[test]
+    fn non_finite_floats_are_accepted() {
+        for (value, raw) in [
+            (f64::INFINITY, "#inf"),
+            (f64::NEG_INFINITY, "#-inf"),
+            (f64::NAN, "#nan"),
+        ] {
+            let parsed = crate::parse(&format!("number {raw}")).unwrap();
+            let decoded = kdl_document_to_value(&parsed).unwrap();
+            let Value::Object(fields) = decoded else {
+                panic!("expected object")
+            };
+            let Value::Float(decoded) = fields[0].1 else {
+                panic!("expected float")
+            };
+            if value.is_nan() {
+                assert!(decoded.is_nan());
+            } else {
+                assert_eq!(decoded, value);
+            }
+
+            let input = Value::Object(vec![("number".to_string(), Value::Float(value))]);
+            let document = value_to_kdl_document(&input).unwrap();
+            let KdlEntry::Argument {
+                value: KdlValue::Number(number),
+                ..
+            } = &document.nodes[0].entries[0]
+            else {
+                panic!("expected number")
+            };
+            assert_eq!(number.raw(), raw);
+
+            let decoded = kdl_document_to_value(&document).unwrap();
+            let Value::Object(fields) = decoded else {
+                panic!("expected object")
+            };
+            let Value::Float(decoded) = fields[0].1 else {
+                panic!("expected float")
+            };
+            if value.is_nan() {
+                assert!(decoded.is_nan());
+            } else {
+                assert_eq!(decoded, value);
+            }
+        }
+    }
+
+    #[test]
     fn integer_and_float_are_distinct() {
         let int_input = Value::Object(vec![("n".to_string(), Value::Integer(1))]);
         let flt_input = Value::Object(vec![("n".to_string(), Value::Float(1.0))]);
@@ -416,7 +453,6 @@ mod tests {
         let int_out = roundtrip(&int_input);
         let flt_out = roundtrip(&flt_input);
 
-        // After round-trip they must remain distinct.
         assert_ne!(int_out, flt_out);
 
         match &int_out {
@@ -429,20 +465,12 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Null
-    // -----------------------------------------------------------------------
-
     #[test]
     fn roundtrip_null() {
         let input = Value::Object(vec![("deleted".to_string(), Value::Null)]);
         let output = roundtrip(&input);
         assert_eq!(input, output);
     }
-
-    // -----------------------------------------------------------------------
-    // Bool
-    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_bool() {
@@ -454,10 +482,6 @@ mod tests {
         assert_eq!(input, output);
     }
 
-    // -----------------------------------------------------------------------
-    // Negative integer
-    // -----------------------------------------------------------------------
-
     #[test]
     fn roundtrip_negative_integer() {
         let input = Value::Object(vec![("offset".to_string(), Value::Integer(-7))]);
@@ -465,19 +489,14 @@ mod tests {
         assert_eq!(input, output);
     }
 
-    // -----------------------------------------------------------------------
-    // Error: non-Object at top level
-    // -----------------------------------------------------------------------
-
     #[test]
     fn top_level_non_object_is_error() {
         let result = value_to_kdl_document(&Value::String("oops".to_string()));
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().reason,
+            ValueErrorReason::TopLevelMustBeObject
+        );
     }
-
-    // -----------------------------------------------------------------------
-    // Round-trip via normalize() + parse() (full text serialization)
-    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_via_text() {
@@ -502,13 +521,11 @@ mod tests {
         let doc2 = parse(&text).unwrap();
         let output = kdl_document_to_value(&doc2).unwrap();
 
-        // Check field by field (Float comparison needs epsilon).
         match (&input, &output) {
             (Value::Object(a), Value::Object(b)) => {
                 assert_eq!(a.len(), b.len());
                 assert_eq!(a[0], b[0]); // name
                 assert_eq!(a[1], b[1]); // age
-                                        // score: float comparison
                 if let (Value::Float(fa), Value::Float(fb)) = (&a[2].1, &b[2].1) {
                     assert!((fa - fb).abs() < 1e-10);
                 } else {
@@ -521,13 +538,8 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Node with no arguments decodes as Null
-    // -----------------------------------------------------------------------
-
     #[test]
     fn empty_node_decoded_as_null() {
-        // Build a document with a node that has no arguments.
         let doc = KdlDocument {
             nodes: vec![KdlNode {
                 ty: None,
@@ -538,5 +550,184 @@ mod tests {
         };
         let val = kdl_document_to_value(&doc).unwrap();
         assert_eq!(val, Value::Object(vec![("empty".to_string(), Value::Null)]));
+    }
+
+    #[test]
+    fn empty_object_roundtrips_through_structure_and_text() {
+        use crate::{parse, serialize};
+
+        let input = Value::Object(vec![("empty".to_string(), Value::Object(vec![]))]);
+        let doc = value_to_kdl_document(&input).unwrap();
+        assert_eq!(doc.nodes[0].children, Some(vec![]));
+        assert_eq!(kdl_document_to_value(&doc).unwrap(), input);
+
+        let text = serialize(&doc);
+        assert_eq!(text, "empty {\n}\n");
+        let reparsed = parse(&text).unwrap();
+        assert_eq!(reparsed.nodes[0].children, Some(vec![]));
+        assert_eq!(kdl_document_to_value(&reparsed).unwrap(), input);
+    }
+
+    #[test]
+    fn empty_array_is_rejected() {
+        let input = Value::Object(vec![("empty".to_string(), Value::Array(vec![]))]);
+        assert_eq!(
+            value_to_kdl_document(&input).unwrap_err().reason,
+            ValueErrorReason::EmptyArrayCannotBeConverted
+        );
+    }
+
+    #[test]
+    fn nested_collections_in_array_are_rejected() {
+        for nested in [Value::Array(vec![]), Value::Object(vec![])] {
+            let input = Value::Object(vec![(
+                "items".to_string(),
+                Value::Array(vec![Value::Integer(1), nested]),
+            )]);
+            assert_eq!(
+                value_to_kdl_document(&input).unwrap_err().reason,
+                ValueErrorReason::NestedCollectionInArray
+            );
+        }
+    }
+
+    #[test]
+    fn properties_are_rejected_with_and_without_arguments() {
+        for input in ["node key=1", "node 1 key=2"] {
+            let doc = crate::parse(input).unwrap();
+            assert_eq!(
+                kdl_document_to_value(&doc).unwrap_err().reason,
+                ValueErrorReason::PropertyCannotBeConverted
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_type_annotations_are_rejected() {
+        for (input, expected) in [
+            (
+                "(node_ty)node 1",
+                ValueErrorReason::UnsupportedTypeAnnotation("node_ty".to_string()),
+            ),
+            (
+                "node (entry_ty)1",
+                ValueErrorReason::UnsupportedTypeAnnotation("entry_ty".to_string()),
+            ),
+            (
+                "node (f64)\"text\"",
+                ValueErrorReason::UnsupportedTypeAnnotation("f64".to_string()),
+            ),
+        ] {
+            let doc = crate::parse(input).unwrap();
+            assert_eq!(kdl_document_to_value(&doc).unwrap_err().reason, expected);
+        }
+    }
+
+    #[test]
+    fn mixed_arguments_and_children_are_rejected() {
+        let doc = crate::parse("node 1 { child }").unwrap();
+        assert_eq!(
+            kdl_document_to_value(&doc).unwrap_err().reason,
+            ValueErrorReason::MixedArgumentsAndChildren
+        );
+    }
+
+    #[test]
+    fn number_decode_preserves_supported_values_and_rejects_uninterpreted_raw() {
+        let hex = crate::parse("node 0xff").unwrap();
+        assert_eq!(
+            kdl_document_to_value(&hex).unwrap(),
+            Value::Object(vec![("node".to_string(), Value::Integer(255))])
+        );
+
+        let infinity = crate::parse("node #inf").unwrap();
+        let decoded = kdl_document_to_value(&infinity).unwrap();
+        let Value::Object(fields) = decoded else {
+            panic!("expected object")
+        };
+        let Value::Float(value) = fields[0].1 else {
+            panic!("expected float")
+        };
+        assert!(value.is_infinite() && value > 0.0);
+
+        let invalid = KdlDocument {
+            nodes: vec![KdlNode {
+                ty: None,
+                name: "node".to_string(),
+                entries: vec![KdlEntry::Argument {
+                    ty: None,
+                    value: KdlValue::Number(KdlNumber {
+                        raw: "999999999999999999999999999999999999999999".to_string(),
+                        as_i64: None,
+                        as_f64: None,
+                    }),
+                }],
+                children: None,
+            }],
+        };
+        assert_eq!(
+            kdl_document_to_value(&invalid).unwrap_err().reason,
+            ValueErrorReason::NumberCannotBeConverted(
+                "999999999999999999999999999999999999999999".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn rejection_priority_is_deterministic() {
+        let argument = KdlEntry::Argument {
+            ty: Some("entry_ty".to_string()),
+            value: KdlValue::Number(KdlNumber {
+                raw: "1".to_string(),
+                as_i64: Some(1),
+                as_f64: Some(1.0),
+            }),
+        };
+        let property = KdlEntry::Property {
+            key: "key".to_string(),
+            ty: None,
+            value: KdlValue::Bool(true),
+        };
+        let child = KdlNode {
+            ty: None,
+            name: "child".to_string(),
+            entries: vec![],
+            children: None,
+        };
+        let reason = |ty, entries| {
+            let doc = KdlDocument {
+                nodes: vec![KdlNode {
+                    ty,
+                    name: "node".to_string(),
+                    entries,
+                    children: Some(vec![child.clone()]),
+                }],
+            };
+            kdl_document_to_value(&doc).unwrap_err().reason
+        };
+
+        assert_eq!(
+            reason(
+                Some("node_ty".to_string()),
+                vec![argument.clone(), property]
+            ),
+            ValueErrorReason::PropertyCannotBeConverted
+        );
+        assert_eq!(
+            reason(Some("node_ty".to_string()), vec![argument.clone()]),
+            ValueErrorReason::UnsupportedTypeAnnotation("node_ty".to_string())
+        );
+        assert_eq!(
+            reason(None, vec![argument.clone()]),
+            ValueErrorReason::UnsupportedTypeAnnotation("entry_ty".to_string())
+        );
+        let untyped = KdlEntry::Argument {
+            ty: None,
+            value: argument.value().clone(),
+        };
+        assert_eq!(
+            reason(None, vec![untyped]),
+            ValueErrorReason::MixedArgumentsAndChildren
+        );
     }
 }

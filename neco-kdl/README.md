@@ -91,11 +91,33 @@ Converts a `KdlDocument` to its normalized string form. Normalization rules:
 ### `value_to_kdl_document` / `kdl_document_to_value`
 
 ```rust
-pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, KdlError>
-pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError>
+pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, ValueError>
+pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, ValueError>
 ```
 
 Converts between `KdlDocument` and a format-agnostic `Value` enum. `Value` serves as an intermediate representation for bridging KDL with other formats (JSON, CBOR, etc.) without external dependencies.
+
+Conversion preserves an empty Object as an empty children block. Seven typed reasons describe unsupported or lossy inputs:
+
+- an empty Array
+- a nested collection inside an Array
+- properties and unsupported type annotations
+- mixed arguments and children
+- a number without an interpreted value
+
+### `KdlNumber`
+
+The constructor validates KDL number syntax and the supplied interpretations.
+
+```rust
+impl KdlNumber {
+    pub fn new(raw: impl Into<String>, as_i64: Option<i64>, as_f64: Option<f64>)
+        -> Result<Self, NumberError>;
+    pub fn raw(&self) -> &str;
+    pub fn as_i64(&self) -> Option<i64>;
+    pub fn as_f64(&self) -> Option<f64>;
+}
+```
 
 ### Types
 
@@ -105,10 +127,13 @@ Converts between `KdlDocument` and a format-agnostic `Value` enum. `Value` serve
 | `KdlNode` | Node with `ty()`, `name()`, `entries()`, `children()` accessors |
 | `KdlEntry` | `Argument` (positional) or `Property` (named) |
 | `KdlValue` | `String(String)`, `Number(KdlNumber)`, `Bool(bool)`, `Null` |
-| `KdlNumber` | Provides `raw()`, `as_i64()`, `as_f64()`. No upper bound on numeric size |
+| `KdlNumber` | Validated raw number with optional integer and floating-point interpretations |
+| `NumberError` | Raw syntax and interpreted value mismatch |
 | `KdlError` | Error with `line()`, `col()` (1-based), `kind()` |
 | `KdlErrorKind` | Error variant: `UnexpectedChar`, `InvalidEscape`, `UnclosedString`, etc. |
 | `Value` | Format-agnostic intermediate: `Null`, `Bool`, `Integer`, `Float`, `String`, `Array`, `Object` |
+| `ValueError` | Value conversion error containing a `ValueErrorReason` |
+| `ValueErrorReason` | Seven explicit rejection reasons for unsupported or lossy conversions |
 
 ## License
 

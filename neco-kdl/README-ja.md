@@ -89,11 +89,33 @@ pub fn normalize(doc: &KdlDocument) -> String
 ### `value_to_kdl_document` / `kdl_document_to_value`
 
 ```rust
-pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, KdlError>
-pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError>
+pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, ValueError>
+pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, ValueError>
 ```
 
 `KdlDocument` とフォーマット非依存の `Value` `enum` を相互変換する。`Value` は KDL と他フォーマット (JSON、 `CBOR` 等) の橋渡し用中間表現として使える。
+
+空の Object は空の children block として保存する。保存できない入力は、次の 7 種の理由で弁別する。
+
+- 空の Array
+- Array 内の入れ子になった値
+- property と未対応の型注釈
+- argument と children の混在
+- 解釈値を持たない数値
+
+### `KdlNumber`
+
+構築時に KDL 数値の文法と、指定した解釈値の一致を検証する。
+
+```rust
+impl KdlNumber {
+    pub fn new(raw: impl Into<String>, as_i64: Option<i64>, as_f64: Option<f64>)
+        -> Result<Self, NumberError>;
+    pub fn raw(&self) -> &str;
+    pub fn as_i64(&self) -> Option<i64>;
+    pub fn as_f64(&self) -> Option<f64>;
+}
+```
 
 ### 主な型
 
@@ -103,10 +125,13 @@ pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, KdlError>
 | `KdlNode` | ノード。`ty()`、`name()`、`entries()`、`children()` で各要素を参照 |
 | `KdlEntry` | `Argument`(位置引数)または `Property`(名前付き引数) |
 | `KdlValue` | `String(String)`、`Number(KdlNumber)`、`Bool(bool)`、`Null` |
-| `KdlNumber` | `raw()`、`as_i64()`、`as_f64()` を提供。数値サイズに上限なし |
+| `KdlNumber` | raw 文法と整数・浮動小数点の解釈値を検証する数値 |
+| `NumberError` | raw 文法と解釈値の不一致 |
 | `KdlError` | `line()`、`col()`(1-based)、`kind()` でエラー情報を参照 |
 | `KdlErrorKind` | エラー種別(`UnexpectedChar`、`InvalidEscape`、`UnclosedString` 等) |
 | `Value` | フォーマット非依存の中間表現: `Null`、`Bool`、`Integer`、`Float`、`String`、`Array`、`Object` |
+| `ValueError` | `ValueErrorReason` を持つ Value 変換エラー |
+| `ValueErrorReason` | 保存できない変換を弁別する 7 種の拒否理由 |
 
 ## ライセンス
 

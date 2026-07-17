@@ -78,7 +78,6 @@ pub(crate) fn skip_line_space(s: &mut Scanner<'_>) -> Result<(), KdlError> {
                 _ => break,
             },
             Some('\\') => {
-                // escline の可能性: \ ws* (single-line-comment | newline | eof)
                 if try_skip_escline(s)? {
                     continue;
                 }
@@ -124,8 +123,6 @@ fn try_skip_escline(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
             s.advance();
             s.advance();
             skip_single_line_comment(s)?;
-            // single-line comment はコメント後に改行/EOF を含む
-            // consume_newline は skip_single_line_comment が行わないので呼ぶ
             s.consume_newline();
             Ok(true)
         }
@@ -133,10 +130,7 @@ fn try_skip_escline(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
             s.consume_newline();
             Ok(true)
         }
-        None => {
-            // EOF : escline は EOF で終了可能
-            Ok(true)
-        }
+        None => Ok(true),
         _ => {
             s.restore(saved);
             Ok(false)
@@ -167,13 +161,10 @@ mod tests {
         let mut s = Scanner::new(" outer /* inner */ still */ rest");
         skip_block_comment(&mut s).unwrap();
         assert_eq!(s.peek(), Some(' '));
-        // " rest" が残る
     }
 
     #[test]
     fn block_comment_deeply_nested() {
-        // skip_block_comment は `/*` 消費済みの前提で呼ぶ
-        // ネスト深度 3: /* a /* b /* c */ */ */
         let mut s = Scanner::new(" a /* b /* c */ */ */x");
         skip_block_comment(&mut s).unwrap();
         assert_eq!(s.peek(), Some('x'));

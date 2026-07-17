@@ -2,7 +2,9 @@
 
 [English](README.md)
 
-KDL v2 文書のための `necosystems series` 構造化 AST 層。 `neco-kdl` パーサーの上に名前空間パス、 参照、 構造化命名、 5 軸の同型変換を載せ、 共有 `neco-ast` 構造参照 trait も実装する。
+KDL v2 文書に、名前空間パス、参照、構造化命名、5 軸の同型変換を提供する。
+
+0.3 は `neco-kdl` 0.4 を利用し、AST 変換で空の children block を保存する。
 
 本 crate には 2 つの動作層がある。 読み取り側は `KdlDocument` の上に名前空間パス、 型注釈、 `property` と `child` の対称、 `form X` / `form Y` の `kind` キーワードを解釈するアクセサを文書を変更せずに提供する。 変換側は利用者が宣言する `Convention` ( 予約語の `Marker` と接頭辞文字 ) を受け取り、 5 軸の包み同型に沿って文書を書き換える。 各軸は往復可能。
 

@@ -2,9 +2,11 @@
 
 [日本語](README-ja.md)
 
-necosystems series structured AST layer for KDL v2 documents.
+Structured AST layer for KDL v2 documents.
 
 It builds namespace path, cross-reference, structured naming, and procedural nesting abstractions on top of the `neco-kdl` parser, and implements the shared `neco-ast` structured access traits.
+
+Version 0.3 uses `neco-kdl` 0.4 and preserves empty children blocks across AST transformations.
 
 The crate has two layers of behavior. The reading side exposes accessors over `KdlDocument` that interpret namespace paths, type annotations, property-vs-child duality, and form X / form Y kind keywords without modifying the document. The transformation side accepts a consumer-supplied `Convention` of marker reserved words or prefix characters and rewrites the document along five orthogonal containment axes, each of which is round-trippable.
 

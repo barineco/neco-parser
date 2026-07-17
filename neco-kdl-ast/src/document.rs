@@ -233,12 +233,12 @@ fn apply_axis_1(doc: Document, form: &AxisForm, conv: &Convention) -> Document {
 fn apply_axis_2(doc: Document, form: &AxisForm, conv: &Convention) -> Document {
     match form {
         AxisForm::Off | AxisForm::ExpandWithMarker(_) | AxisForm::CollapseWithMarker(_) => doc,
-        AxisForm::Expand => kind_markers(conv).into_iter().fold(doc, |d, k| {
-            d.expand_dot_chain(&k, conv).0
-        }),
-        AxisForm::Collapse => kind_markers(conv).into_iter().fold(doc, |d, k| {
-            d.collapse_dot_chain(&k, conv).0
-        }),
+        AxisForm::Expand => kind_markers(conv)
+            .into_iter()
+            .fold(doc, |d, k| d.expand_dot_chain(&k, conv).0),
+        AxisForm::Collapse => kind_markers(conv)
+            .into_iter()
+            .fold(doc, |d, k| d.collapse_dot_chain(&k, conv).0),
     }
 }
 

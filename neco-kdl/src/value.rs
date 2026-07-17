@@ -220,11 +220,11 @@ impl KdlValue {
 #[derive(Debug, Clone)]
 pub struct KdlNumber {
     /// 原文(アンダースコア・プレフィックス含む)
-    pub raw: String,
+    pub(crate) raw: String,
     /// 整数として解釈可能な場合
-    pub as_i64: Option<i64>,
+    pub(crate) as_i64: Option<i64>,
     /// 浮動小数点として解釈可能な場合(#inf, #-inf, #nan 含む)
-    pub as_f64: Option<f64>,
+    pub(crate) as_f64: Option<f64>,
 }
 
 impl KdlNumber {
@@ -243,6 +243,18 @@ impl KdlNumber {
         self.as_f64
     }
 }
+
+/// `KdlNumber` の raw と解釈値が一致しない場合の構築エラー。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NumberError;
+
+impl core::fmt::Display for NumberError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "KDL number raw and interpreted values do not match")
+    }
+}
+
+impl std::error::Error for NumberError {}
 
 impl PartialEq for KdlNumber {
     fn eq(&self, other: &Self) -> bool {
@@ -346,7 +358,29 @@ mod tests {
         }
     }
 
-    // --- KdlValue::as_str ---
+    #[test]
+    fn number_constructor_accepts_matching_components() {
+        assert!(KdlNumber::new("5", Some(5), Some(5.0)).is_ok());
+        assert!(KdlNumber::new("1.0", None, Some(1.0)).is_ok());
+        assert!(KdlNumber::new("#nan", None, Some(f64::NAN)).is_ok());
+        assert!(KdlNumber::new("-0", Some(0), Some(-0.0)).is_ok());
+        assert!(KdlNumber::new("-0.0", None, Some(-0.0)).is_ok());
+    }
+
+    #[test]
+    fn number_constructor_rejects_invalid_raw() {
+        for raw in ["", "0xG", "0x", "0b2", "+"] {
+            assert_eq!(KdlNumber::new(raw, None, None), Err(NumberError));
+        }
+    }
+
+    #[test]
+    fn number_constructor_rejects_mismatched_components() {
+        assert_eq!(KdlNumber::new("5", Some(5), Some(999.0)), Err(NumberError));
+        assert_eq!(KdlNumber::new("5", None, None), Err(NumberError));
+        assert_eq!(KdlNumber::new("-0", Some(0), Some(0.0)), Err(NumberError));
+        assert_eq!(KdlNumber::new("-0.0", None, Some(0.0)), Err(NumberError));
+    }
 
     #[test]
     fn as_str_returns_some_for_string() {
@@ -360,8 +394,6 @@ mod tests {
         assert_eq!(v.as_str(), None);
     }
 
-    // --- KdlValue::as_bool ---
-
     #[test]
     fn as_bool_returns_some_for_bool() {
         assert_eq!(KdlValue::Bool(true).as_bool(), Some(true));
@@ -374,8 +406,6 @@ mod tests {
         assert_eq!(v.as_bool(), None);
     }
 
-    // --- KdlValue::as_f64 ---
-
     #[test]
     fn as_f64_returns_some_for_number() {
         let v = KdlValue::Number(make_number("2.5", None, Some(2.5)));
@@ -386,8 +416,6 @@ mod tests {
     fn as_f64_returns_none_for_bool() {
         assert_eq!(KdlValue::Bool(true).as_f64(), None);
     }
-
-    // --- KdlValue::as_i64 ---
 
     #[test]
     fn as_i64_returns_some_for_integer() {
@@ -400,8 +428,6 @@ mod tests {
         let v = KdlValue::Number(make_number("2.5", None, Some(2.5)));
         assert_eq!(v.as_i64(), None);
     }
-
-    // --- KdlEntry::value ---
 
     #[test]
     fn entry_value_for_argument() {
@@ -421,8 +447,6 @@ mod tests {
         };
         assert_eq!(entry.value(), &KdlValue::Bool(true));
     }
-
-    // --- KdlNode::get ---
 
     #[test]
     fn node_get_returns_some_for_existing_key() {
@@ -462,8 +486,6 @@ mod tests {
         assert_eq!(node.get("missing"), None);
     }
 
-    // --- helpers for navigation tests ---
-
     fn arg(value: KdlValue) -> KdlEntry {
         KdlEntry::Argument { ty: None, value }
     }
@@ -500,8 +522,6 @@ mod tests {
         }
     }
 
-    // --- KdlNode::first_arg / first_string_arg ---
-
     #[test]
     fn first_arg_skips_property() {
         let n = node(
@@ -536,8 +556,6 @@ mod tests {
         );
         assert_eq!(n.first_string_arg(), None);
     }
-
-    // --- KdlNode::find_child / find_children ---
 
     #[test]
     fn find_child_returns_first_match() {
@@ -581,8 +599,6 @@ mod tests {
         let parent = node("p", vec![], Some(vec![node("a", vec![], None)]));
         assert_eq!(parent.find_children("z").count(), 0);
     }
-
-    // --- KdlNode::string_prop / bool_prop / int_prop ---
 
     #[test]
     fn string_prop_for_string_value() {
@@ -667,8 +683,6 @@ mod tests {
         assert_eq!(n.int_prop("absent"), None);
     }
 
-    // --- KdlNode::string_child_values ---
-
     #[test]
     fn string_child_values_collects_string_args() {
         let parent = node(
@@ -699,8 +713,6 @@ mod tests {
         );
         assert_eq!(parent.string_child_values("item"), vec!["a"]);
     }
-
-    // --- KdlEntry::ty ---
 
     #[test]
     fn entry_ty_for_typed_argument() {

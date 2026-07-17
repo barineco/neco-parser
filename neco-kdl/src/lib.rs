@@ -12,8 +12,12 @@ mod string;
 mod value;
 
 pub use builder::{KdlDocumentBuilder, KdlNodeBuilder};
-pub use convert::{kdl_document_to_value, value_to_kdl_document, Value};
+pub use convert::{
+    kdl_document_to_value, value_to_kdl_document, Value, ValueError, ValueErrorReason,
+};
 pub use normalize::normalize;
 pub use parse::parse;
 pub use serialize::serialize;
-pub use value::{KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlNumber, KdlValue};
+pub use value::{
+    KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlNumber, KdlValue, NumberError,
+};

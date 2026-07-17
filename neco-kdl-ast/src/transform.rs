@@ -165,7 +165,7 @@ where
         if let Some(children) = node.children.take() {
             let skip_child_names = conv.is_marker_kind(&node.name);
             let (children, child_changed) = transform_nodes(children, conv, skip_child_names, f);
-            node.children = (!children.is_empty()).then_some(children);
+            node.children = Some(children);
             changed |= child_changed;
         }
         let (mut replaced, node_changed) = f(node, parent_is_marker);

@@ -108,6 +108,10 @@ pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, ValueError> {
     Ok(Value::Object(fields))
 }
 
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
 /// A sentinel type-annotation string used to distinguish `Value::Float` from
 /// `Value::Integer` when both are stored as KDL numbers.
 ///
@@ -118,6 +122,7 @@ const FLOAT_TYPE: &str = "f64";
 /// Converts a single key-value pair into a `KdlNode`.
 fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, ValueError> {
     match value {
+        // Nested object → children block
         Value::Object(fields) => {
             let children = fields
                 .iter()
@@ -131,6 +136,7 @@ fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, ValueError> {
             })
         }
 
+        // Array → multiple positional arguments
         Value::Array(items) => {
             if items.is_empty() {
                 return Err(ValueError::new(
@@ -149,6 +155,7 @@ fn value_to_kdl_node(key: &str, value: &Value) -> Result<KdlNode, ValueError> {
             })
         }
 
+        // Primitive → single positional argument
         _ => {
             let entry = primitive_to_argument(value)?;
             Ok(KdlNode {
@@ -180,6 +187,7 @@ fn primitive_to_argument(value: &Value) -> Result<KdlEntry, ValueError> {
             value: KdlValue::Number(i64_to_kdl_number(*i)?),
         }),
         Value::Float(f) => Ok(KdlEntry::Argument {
+            // Use a (f64) type annotation to distinguish from Integer on decode.
             ty: Some(FLOAT_TYPE.to_string()),
             value: KdlValue::Number(f64_to_kdl_number(*f)?),
         }),
@@ -229,8 +237,10 @@ fn kdl_node_to_value(node: &KdlNode) -> Result<Value, ValueError> {
         .collect();
 
     match (args.len(), node.children.as_ref()) {
+        // No arguments and no children → null
         (0, None) => Ok(Value::Null),
 
+        // Children block only → nested Object
         (0, Some(children)) => {
             let mut fields = Vec::with_capacity(children.len());
             for child in children {
@@ -240,8 +250,10 @@ fn kdl_node_to_value(node: &KdlNode) -> Result<Value, ValueError> {
             Ok(Value::Object(fields))
         }
 
+        // Exactly one argument → scalar
         (1, None) => kdl_entry_to_value(args[0]),
 
+        // Multiple arguments → Array
         (_, None) => {
             let items = args
                 .iter()
@@ -250,6 +262,7 @@ fn kdl_node_to_value(node: &KdlNode) -> Result<Value, ValueError> {
             Ok(Value::Array(items))
         }
 
+        // Both arguments and children → ambiguous, treat as error
         (_, Some(_)) => Err(ValueError::new(ValueErrorReason::MixedArgumentsAndChildren)),
     }
 }
@@ -268,6 +281,7 @@ fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, ValueError> {
         KdlValue::Bool(b) => Ok(Value::Bool(*b)),
         KdlValue::String(s) => Ok(Value::String(s.clone())),
         KdlValue::Number(n) => {
+            // A (f64) type annotation marks an explicitly floating-point value.
             if ty == Some(FLOAT_TYPE) {
                 match n.as_f64() {
                     Some(f) => Ok(Value::Float(f)),
@@ -276,6 +290,7 @@ fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, ValueError> {
                     ))),
                 }
             } else {
+                // No annotation: prefer integer interpretation, fall back to float.
                 match n.as_i64() {
                     Some(i) => Ok(Value::Integer(i)),
                     None => match n.as_f64() {
@@ -290,6 +305,10 @@ fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, ValueError> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Number construction helpers
+// ---------------------------------------------------------------------------
+
 fn i64_to_kdl_number(i: i64) -> Result<KdlNumber, ValueError> {
     let raw = i.to_string();
     KdlNumber::new(raw.clone(), Some(i), Some(i as f64))
@@ -297,6 +316,9 @@ fn i64_to_kdl_number(i: i64) -> Result<KdlNumber, ValueError> {
 }
 
 fn f64_to_kdl_number(f: f64) -> Result<KdlNumber, ValueError> {
+    // Produce a raw string that round-trips through the KDL parser.
+    // We always emit at least one decimal digit so the parser recognises it as
+    // a float (e.g. "2.5", "1.0").
     let raw = format_f64(f);
     KdlNumber::new(raw.clone(), None, Some(f))
         .map_err(|_| ValueError::new(ValueErrorReason::NumberCannotBeConverted(raw)))
@@ -315,6 +337,9 @@ fn format_f64(f: f64) -> String {
         };
     }
 
+    // Use Rust's default Display which includes the decimal point when
+    // needed.  For whole numbers like 1.0, Display produces "1" : we
+    // append ".0" explicitly.
     let s = format!("{f}");
     if s.contains('.') || s.contains('e') || s.contains('E') || s.starts_with('#') {
         s
@@ -323,14 +348,23 @@ fn format_f64(f: f64) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // Helper: round-trip a Value through KdlDocument and back.
     fn roundtrip(v: &Value) -> Value {
         let doc = value_to_kdl_document(v).expect("encode failed");
         kdl_document_to_value(&doc).expect("decode failed")
     }
+
+    // -----------------------------------------------------------------------
+    // Single scalar node: text "hello"
+    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_single_string_node() {
@@ -341,6 +375,10 @@ mod tests {
         let output = roundtrip(&input);
         assert_eq!(input, output);
     }
+
+    // -----------------------------------------------------------------------
+    // Multiple-value node: langs "en" "ja"  →  Array
+    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_array_node() {
@@ -354,6 +392,10 @@ mod tests {
         let output = roundtrip(&input);
         assert_eq!(input, output);
     }
+
+    // -----------------------------------------------------------------------
+    // Nested Object → children block
+    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_nested_object() {
@@ -369,11 +411,16 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    // -----------------------------------------------------------------------
+    // Integer vs Float are preserved
+    // -----------------------------------------------------------------------
+
     #[test]
     fn roundtrip_integer() {
         let input = Value::Object(vec![("count".to_string(), Value::Integer(42))]);
         let output = roundtrip(&input);
         assert_eq!(input, output);
+        // Verify the decoded value is still Integer, not Float.
         match &output {
             Value::Object(fields) => {
                 assert_eq!(fields[0].1, Value::Integer(42));
@@ -453,6 +500,7 @@ mod tests {
         let int_out = roundtrip(&int_input);
         let flt_out = roundtrip(&flt_input);
 
+        // After round-trip they must remain distinct.
         assert_ne!(int_out, flt_out);
 
         match &int_out {
@@ -465,12 +513,20 @@ mod tests {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Null
+    // -----------------------------------------------------------------------
+
     #[test]
     fn roundtrip_null() {
         let input = Value::Object(vec![("deleted".to_string(), Value::Null)]);
         let output = roundtrip(&input);
         assert_eq!(input, output);
     }
+
+    // -----------------------------------------------------------------------
+    // Bool
+    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_bool() {
@@ -482,12 +538,20 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    // -----------------------------------------------------------------------
+    // Negative integer
+    // -----------------------------------------------------------------------
+
     #[test]
     fn roundtrip_negative_integer() {
         let input = Value::Object(vec![("offset".to_string(), Value::Integer(-7))]);
         let output = roundtrip(&input);
         assert_eq!(input, output);
     }
+
+    // -----------------------------------------------------------------------
+    // Error: non-Object at top level
+    // -----------------------------------------------------------------------
 
     #[test]
     fn top_level_non_object_is_error() {
@@ -497,6 +561,10 @@ mod tests {
             ValueErrorReason::TopLevelMustBeObject
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Round-trip via normalize() + parse() (full text serialization)
+    // -----------------------------------------------------------------------
 
     #[test]
     fn roundtrip_via_text() {
@@ -521,11 +589,13 @@ mod tests {
         let doc2 = parse(&text).unwrap();
         let output = kdl_document_to_value(&doc2).unwrap();
 
+        // Check field by field (Float comparison needs epsilon).
         match (&input, &output) {
             (Value::Object(a), Value::Object(b)) => {
                 assert_eq!(a.len(), b.len());
                 assert_eq!(a[0], b[0]); // name
                 assert_eq!(a[1], b[1]); // age
+                                        // score: float comparison
                 if let (Value::Float(fa), Value::Float(fb)) = (&a[2].1, &b[2].1) {
                     assert!((fa - fb).abs() < 1e-10);
                 } else {
@@ -538,8 +608,13 @@ mod tests {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Node with no arguments decodes as Null
+    // -----------------------------------------------------------------------
+
     #[test]
     fn empty_node_decoded_as_null() {
+        // Build a document with a node that has no arguments.
         let doc = KdlDocument {
             nodes: vec![KdlNode {
                 ty: None,

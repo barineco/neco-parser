@@ -120,13 +120,17 @@ impl<'a> Parser<'a> {
     fn parse_number(&mut self) -> Result<JsonValue, ParseError> {
         let start = self.position;
 
+        // optional minus
         if self.peek() == Some(b'-') {
             self.position += 1;
         }
 
+        // integer part
         match self.peek() {
             Some(b'0') => {
                 self.position += 1;
+                // Digits after a leading zero are not allowed.
+                // The trailing-content check catches them.
             }
             Some(b'1'..=b'9') => {
                 self.position += 1;
@@ -137,6 +141,7 @@ impl<'a> Parser<'a> {
             _ => return Err(self.error(ParseErrorKind::InvalidNumber)),
         }
 
+        // fraction
         if self.peek() == Some(b'.') {
             self.position += 1;
             let frac_start = self.position;
@@ -148,6 +153,7 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // exponent
         if matches!(self.peek(), Some(b'e') | Some(b'E')) {
             self.position += 1;
             if matches!(self.peek(), Some(b'+') | Some(b'-')) {
@@ -163,6 +169,7 @@ impl<'a> Parser<'a> {
         }
 
         let slice = &self.input[start..self.position];
+        // UTF-8 safe: number literals are ASCII only.
         let s = core::str::from_utf8(slice).map_err(|_| self.error(ParseErrorKind::InvalidUtf8))?;
         let value: f64 = s
             .parse()
@@ -237,7 +244,9 @@ impl<'a> Parser<'a> {
     fn parse_unicode_escape(&mut self) -> Result<char, ParseError> {
         let cp = self.parse_hex4()?;
 
+        // High surrogate
         if (0xD800..=0xDBFF).contains(&cp) {
+            // Verify that another \u follows immediately.
             self.expect(b'\\')
                 .map_err(|_| self.error(ParseErrorKind::InvalidUnicodeEscape))?;
             self.expect(b'u')
@@ -249,6 +258,7 @@ impl<'a> Parser<'a> {
             let combined = (cp - 0xD800) * 0x400 + (low - 0xDC00) + 0x10000;
             char::from_u32(combined).ok_or_else(|| self.error(ParseErrorKind::InvalidUnicodeEscape))
         } else if (0xDC00..=0xDFFF).contains(&cp) {
+            // Lone low surrogate
             Err(self.error(ParseErrorKind::InvalidUnicodeEscape))
         } else {
             char::from_u32(cp).ok_or_else(|| self.error(ParseErrorKind::InvalidUnicodeEscape))
@@ -469,6 +479,7 @@ mod tests {
     fn parses_deep_nesting_at_limit() {
         let mut input = vec![b'['; 128];
         input.extend(vec![b']'; 128]);
+        // The innermost value is an empty array. 128 levels is allowed.
         assert!(parse(&input).is_ok());
     }
 
@@ -503,6 +514,7 @@ mod tests {
 
     #[test]
     fn reports_leading_zero_numbers() {
+        // If digits follow 0, the parser consumes only 0 and leaves trailing content.
         assert_eq!(
             parse(b"01").unwrap_err().kind,
             ParseErrorKind::TrailingContent
@@ -683,6 +695,7 @@ mod tests {
 
     #[test]
     fn parses_multibyte_utf8_in_string() {
+        // A string containing raw UTF-8 bytes.
         assert_eq!(
             parse("\"日本語\"".as_bytes()),
             Ok(JsonValue::String(String::from("日本語")))
@@ -691,6 +704,7 @@ mod tests {
 
     #[test]
     fn reports_control_character_in_string() {
+        // 0x0A (newline) appears in the string without escaping.
         assert!(parse(b"\"hello\nworld\"").is_err());
     }
 

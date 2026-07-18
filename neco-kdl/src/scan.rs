@@ -1,10 +1,8 @@
-/// UTF-8 文字列のスキャナー。行・列位置を追跡しながら char 単位で走査する。
+/// UTF-8 文字列のスキャナー。位置は byte offset から line_col で導出する。
 pub(crate) struct Scanner<'a> {
     input: &'a str,
     chars: core::str::CharIndices<'a>,
     current: Option<(usize, char)>,
-    line: usize,
-    col: usize,
 }
 
 impl<'a> Scanner<'a> {
@@ -15,8 +13,6 @@ impl<'a> Scanner<'a> {
             input,
             chars,
             current,
-            line: 1,
-            col: 1,
         }
     }
 
@@ -31,12 +27,6 @@ impl<'a> Scanner<'a> {
 
     pub(crate) fn advance(&mut self) -> Option<char> {
         let (_, ch) = self.current?;
-        if is_newline(ch) {
-            self.line += 1;
-            self.col = 1;
-        } else {
-            self.col += 1;
-        }
         self.current = self.chars.next();
         Some(ch)
     }
@@ -52,21 +42,23 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn position(&self) -> (usize, usize) {
-        (self.line, self.col)
-    }
-
     pub(crate) fn is_eof(&self) -> bool {
         self.current.is_none()
     }
 
+    /// 現在の byte offset を位置とする error を作る。
     pub(crate) fn make_error(&self, kind: crate::KdlErrorKind) -> crate::KdlError {
-        crate::KdlError {
-            line: self.line,
-            col: self.col,
-            kind,
-        }
+        self.make_error_at(self.byte_offset(), kind)
+    }
+
+    /// 指定した byte offset を位置とする error を作る。行と列は `line_col` から導出する。
+    pub(crate) fn make_error_at(
+        &self,
+        offset: usize,
+        kind: crate::KdlErrorKind,
+    ) -> crate::KdlError {
+        let (line, col) = line_col(self.input, offset).unwrap_or((1, 1));
+        crate::KdlError { line, col, kind }
     }
 
     pub(crate) fn byte_offset(&self) -> usize {
@@ -83,7 +75,6 @@ impl<'a> Scanner<'a> {
     pub(crate) fn skip_bom(&mut self) {
         if self.peek() == Some('\u{FEFF}') {
             self.current = self.chars.next();
-            self.col = 1;
         }
     }
 
@@ -92,10 +83,9 @@ impl<'a> Scanner<'a> {
         match self.peek() {
             Some(ch) if is_newline(ch) => {
                 let was_cr = ch == '\r';
-                self.advance(); // 行が進む
+                self.advance();
                 if was_cr && self.peek() == Some('\n') {
                     self.current = self.chars.next();
-                    self.col = 1;
                 }
                 true
             }
@@ -108,8 +98,7 @@ impl<'a> Scanner<'a> {
         ScannerState {
             chars: self.chars.clone(),
             current: self.current,
-            line: self.line,
-            col: self.col,
+            offset: self.byte_offset(),
         }
     }
 
@@ -117,8 +106,6 @@ impl<'a> Scanner<'a> {
     pub(crate) fn restore(&mut self, state: ScannerState<'a>) {
         self.chars = state.chars;
         self.current = state.current;
-        self.line = state.line;
-        self.col = state.col;
     }
 }
 
@@ -126,18 +113,55 @@ impl<'a> Scanner<'a> {
 pub(crate) struct ScannerState<'a> {
     chars: core::str::CharIndices<'a>,
     current: Option<(usize, char)>,
-    line: usize,
-    col: usize,
+    offset: usize,
 }
 
 impl ScannerState<'_> {
-    pub(crate) fn line(&self) -> usize {
-        self.line
+    pub(crate) fn byte_offset(&self) -> usize {
+        self.offset
+    }
+}
+
+/// byte offset を一始まりの行と列へ導出する唯一の変換。
+///
+/// 範囲外と文字の途中の offset には None を返す。改行の規則は解析と同一である。
+pub fn line_col(input: &str, offset: usize) -> Option<(usize, usize)> {
+    if !input.is_char_boundary(offset) {
+        return None;
     }
 
-    pub(crate) fn col(&self) -> usize {
-        self.col
+    let mut line = 1;
+    let mut col = 1;
+    let mut index = 0;
+    let bytes = input.as_bytes();
+
+    while index < offset {
+        // index は常に char 境界にある。
+        let ch = input[index..].chars().next().unwrap();
+        let len = ch.len_utf8();
+
+        if is_newline(ch) {
+            if ch == '\r' && bytes.get(index + len) == Some(&b'\n') {
+                if offset == index + len {
+                    // CR と LF の間の offset は前の行に属する。
+                    return Some((line, col + 1));
+                }
+                line += 1;
+                col = 1;
+                index += len + 1;
+                continue;
+            }
+            line += 1;
+            col = 1;
+            index += len;
+            continue;
+        }
+
+        col += 1;
+        index += len;
     }
+
+    Some((line, col))
 }
 
 /// KDL v2 の Unicode whitespace(改行を含まない)。18 文字。
@@ -280,17 +304,15 @@ mod tests {
     }
 
     #[test]
-    fn scanner_basic_tracking() {
+    fn scanner_tracks_byte_offset() {
         let mut s = Scanner::new("ab\ncd");
-        assert_eq!(s.position(), (1, 1));
+        assert_eq!(s.byte_offset(), 0);
         assert_eq!(s.advance(), Some('a'));
-        assert_eq!(s.position(), (1, 2));
+        assert_eq!(s.byte_offset(), 1);
         assert_eq!(s.advance(), Some('b'));
-        assert_eq!(s.position(), (1, 3));
+        assert_eq!(s.byte_offset(), 2);
         assert_eq!(s.advance(), Some('\n'));
-        assert_eq!(s.position(), (2, 1));
-        assert_eq!(s.advance(), Some('c'));
-        assert_eq!(s.position(), (2, 2));
+        assert_eq!(s.byte_offset(), 3);
     }
 
     #[test]
@@ -298,7 +320,7 @@ mod tests {
         let mut s = Scanner::new("a\r\nb");
         assert_eq!(s.advance(), Some('a'));
         assert!(s.consume_newline());
-        assert_eq!(s.position(), (2, 1));
+        assert_eq!(s.byte_offset(), 3);
         assert_eq!(s.peek(), Some('b'));
     }
 
@@ -307,7 +329,27 @@ mod tests {
         let mut s = Scanner::new("\u{FEFF}hello");
         s.skip_bom();
         assert_eq!(s.peek(), Some('h'));
-        assert_eq!(s.position(), (1, 1));
+        assert_eq!(s.byte_offset(), 3);
+    }
+
+    #[test]
+    fn line_col_folds_crlf_and_rejects_interior_offsets() {
+        let input = "ab\r\ncd";
+        assert_eq!(line_col(input, 0), Some((1, 1)));
+        assert_eq!(line_col(input, 2), Some((1, 3))); // CR は前の行
+        assert_eq!(line_col(input, 3), Some((1, 4))); // CR と LF の間は前の行
+        assert_eq!(line_col(input, 4), Some((2, 1))); // LF の消費直後
+        assert_eq!(line_col(input, 5), Some((2, 2)));
+        assert_eq!(line_col(input, 6), Some((2, 3))); // 末尾 offset
+        assert_eq!(line_col(input, 7), None); // 範囲外
+    }
+
+    #[test]
+    fn line_col_rejects_offset_inside_multibyte_char() {
+        let input = "π";
+        assert_eq!(line_col(input, 0), Some((1, 1)));
+        assert_eq!(line_col(input, 1), None); // π の途中
+        assert_eq!(line_col(input, 2), Some((1, 2))); // 末尾
     }
 
     #[test]

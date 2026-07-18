@@ -16,8 +16,10 @@ pub use convert::{
     kdl_document_to_value, value_to_kdl_document, Value, ValueError, ValueErrorReason,
 };
 pub use normalize::normalize;
-pub use parse::parse;
+pub use parse::{parse, parse_spanned};
+pub use scan::line_col;
 pub use serialize::serialize;
 pub use value::{
-    KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlNumber, KdlValue, NumberError,
+    KdlDocument, KdlEntry, KdlError, KdlErrorKind, KdlNode, KdlNumber, KdlSpan, KdlValue,
+    NumberError, SpannedKdlDocument, SpannedKdlEntry, SpannedKdlNode,
 };

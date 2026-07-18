@@ -171,6 +171,139 @@ impl KdlEntry {
     }
 }
 
+/// 入力 UTF-8 byte 列の半開区間。source 由来の位置だけを表す。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KdlSpan {
+    /// 開始 byte offset ( この位置を含む )
+    pub start: usize,
+    /// 終了 byte offset ( この位置を含まない )
+    pub end: usize,
+}
+
+/// source span を伴う KDL v2 ドキュメント。生成入口は parse_spanned だけである。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedKdlDocument {
+    nodes: Vec<SpannedKdlNode>,
+}
+
+impl SpannedKdlDocument {
+    pub(crate) fn new(nodes: Vec<SpannedKdlNode>) -> Self {
+        Self { nodes }
+    }
+
+    /// ドキュメント内の位置付きノード一覧を返す。
+    pub fn nodes(&self) -> &[SpannedKdlNode] {
+        &self.nodes
+    }
+
+    /// source 由来の span を除去し通常の `KdlDocument` へ変換する一方向の変換。
+    pub fn into_document(self) -> KdlDocument {
+        KdlDocument {
+            nodes: self
+                .nodes
+                .into_iter()
+                .map(SpannedKdlNode::into_node)
+                .collect(),
+        }
+    }
+}
+
+/// source span を伴う KDL v2 ノード。境界の規則は README に記す。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedKdlNode {
+    span: KdlSpan,
+    ty: Option<String>,
+    name: String,
+    entries: Vec<SpannedKdlEntry>,
+    children: Option<Vec<SpannedKdlNode>>,
+}
+
+impl SpannedKdlNode {
+    pub(crate) fn new(
+        span: KdlSpan,
+        ty: Option<String>,
+        name: String,
+        entries: Vec<SpannedKdlEntry>,
+        children: Option<Vec<SpannedKdlNode>>,
+    ) -> Self {
+        Self {
+            span,
+            ty,
+            name,
+            entries,
+            children,
+        }
+    }
+
+    /// ノードの source span を返す。
+    pub fn span(&self) -> KdlSpan {
+        self.span
+    }
+
+    /// type annotation を返す。
+    pub fn ty(&self) -> Option<&str> {
+        self.ty.as_deref()
+    }
+
+    /// ノード名を返す。
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// 位置付きエントリ一覧を返す。
+    pub fn entries(&self) -> &[SpannedKdlEntry] {
+        &self.entries
+    }
+
+    /// 位置付き子ノードを返す。
+    pub fn children(&self) -> Option<&[SpannedKdlNode]> {
+        self.children.as_deref()
+    }
+
+    /// source 由来の span を除去し通常の `KdlNode` へ変換する。
+    pub fn into_node(self) -> KdlNode {
+        KdlNode {
+            ty: self.ty,
+            name: self.name,
+            entries: self
+                .entries
+                .into_iter()
+                .map(SpannedKdlEntry::into_entry)
+                .collect(),
+            children: self
+                .children
+                .map(|nodes| nodes.into_iter().map(SpannedKdlNode::into_node).collect()),
+        }
+    }
+}
+
+/// source span を伴う KDL v2 エントリ。境界の規則は README に記す。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedKdlEntry {
+    span: KdlSpan,
+    entry: KdlEntry,
+}
+
+impl SpannedKdlEntry {
+    pub(crate) fn new(span: KdlSpan, entry: KdlEntry) -> Self {
+        Self { span, entry }
+    }
+
+    /// エントリの source span を返す。
+    pub fn span(&self) -> KdlSpan {
+        self.span
+    }
+
+    /// 通常のエントリ値を返す。
+    pub fn entry(&self) -> &KdlEntry {
+        &self.entry
+    }
+
+    fn into_entry(self) -> KdlEntry {
+        self.entry
+    }
+}
+
 /// KDL v2 の値。
 #[derive(Debug, Clone, PartialEq)]
 pub enum KdlValue {
@@ -382,6 +515,8 @@ mod tests {
         assert_eq!(KdlNumber::new("-0.0", None, Some(0.0)), Err(NumberError));
     }
 
+    // --- KdlValue::as_str ---
+
     #[test]
     fn as_str_returns_some_for_string() {
         let v = KdlValue::String("hello".to_string());
@@ -393,6 +528,8 @@ mod tests {
         let v = KdlValue::Number(make_number("42", Some(42), Some(42.0)));
         assert_eq!(v.as_str(), None);
     }
+
+    // --- KdlValue::as_bool ---
 
     #[test]
     fn as_bool_returns_some_for_bool() {
@@ -406,6 +543,8 @@ mod tests {
         assert_eq!(v.as_bool(), None);
     }
 
+    // --- KdlValue::as_f64 ---
+
     #[test]
     fn as_f64_returns_some_for_number() {
         let v = KdlValue::Number(make_number("2.5", None, Some(2.5)));
@@ -416,6 +555,8 @@ mod tests {
     fn as_f64_returns_none_for_bool() {
         assert_eq!(KdlValue::Bool(true).as_f64(), None);
     }
+
+    // --- KdlValue::as_i64 ---
 
     #[test]
     fn as_i64_returns_some_for_integer() {
@@ -428,6 +569,8 @@ mod tests {
         let v = KdlValue::Number(make_number("2.5", None, Some(2.5)));
         assert_eq!(v.as_i64(), None);
     }
+
+    // --- KdlEntry::value ---
 
     #[test]
     fn entry_value_for_argument() {
@@ -447,6 +590,8 @@ mod tests {
         };
         assert_eq!(entry.value(), &KdlValue::Bool(true));
     }
+
+    // --- KdlNode::get ---
 
     #[test]
     fn node_get_returns_some_for_existing_key() {
@@ -486,6 +631,8 @@ mod tests {
         assert_eq!(node.get("missing"), None);
     }
 
+    // --- helpers for navigation tests ---
+
     fn arg(value: KdlValue) -> KdlEntry {
         KdlEntry::Argument { ty: None, value }
     }
@@ -522,6 +669,8 @@ mod tests {
         }
     }
 
+    // --- KdlNode::first_arg / first_string_arg ---
+
     #[test]
     fn first_arg_skips_property() {
         let n = node(
@@ -556,6 +705,8 @@ mod tests {
         );
         assert_eq!(n.first_string_arg(), None);
     }
+
+    // --- KdlNode::find_child / find_children ---
 
     #[test]
     fn find_child_returns_first_match() {
@@ -599,6 +750,8 @@ mod tests {
         let parent = node("p", vec![], Some(vec![node("a", vec![], None)]));
         assert_eq!(parent.find_children("z").count(), 0);
     }
+
+    // --- KdlNode::string_prop / bool_prop / int_prop ---
 
     #[test]
     fn string_prop_for_string_value() {
@@ -683,6 +836,8 @@ mod tests {
         assert_eq!(n.int_prop("absent"), None);
     }
 
+    // --- KdlNode::string_child_values ---
+
     #[test]
     fn string_child_values_collects_string_args() {
         let parent = node(
@@ -713,6 +868,8 @@ mod tests {
         );
         assert_eq!(parent.string_child_values("item"), vec!["a"]);
     }
+
+    // --- KdlEntry::ty ---
 
     #[test]
     fn entry_ty_for_typed_argument() {

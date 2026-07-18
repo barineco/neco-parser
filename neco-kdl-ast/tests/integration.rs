@@ -116,6 +116,16 @@ fn collect_recursive_annotations(n: StructuredNode<'_>) -> Vec<()> {
     out
 }
 
+/// driver 2: default Convention で render_as が identity、 既存 read accessor 全種が同値返却
+///
+/// spec § 不変条件 が列挙する read accessor 10 種を全て assert する:
+/// `attribute_str` / `attribute_bool` / `attribute_int` / `node_name_as_nsid` /
+/// `dot_chain_depth` / `dot_chain_kind` / `type_annotation` / `structured_name` /
+/// `structured_name_form_x` / `structured_name_form_y`。 fixture は dot-chain
+/// ( axis 2 procedure ) + type annotation ( axis 4 ) + property entry ( axis 3 ) +
+/// form X kind keyword ( axis 5 ) を含む。 axis 3 ( property-child 等価 ) では
+/// string / bool / int の 3 leg を property form ( `count=3` ) と child-with-arg form
+/// ( `total 7` ) の双方で網羅する。
 #[test]
 fn default_convention_preserves_existing_accessor_behavior() {
     let input = r#"
@@ -137,6 +147,7 @@ fn default_convention_preserves_existing_accessor_behavior() {
     let original = Document::parse(input).expect("parse");
     let rendered = original.render_as(&Convention::default());
 
+    // serialize 比較で identity 確認 ( default Convention は全軸 OFF なので render_as は no-op )
     assert_eq!(serialize(original.as_kdl()), serialize(rendered.as_kdl()));
 
     let original_node = original
@@ -148,6 +159,8 @@ fn default_convention_preserves_existing_accessor_behavior() {
         .next()
         .expect("rendered node");
 
+    // axis 3 property-child 等価の 3 leg ( str / bool / int ) を render_as identity で確認。
+    // count=3 は property form、 total 7 は child-with-arg form。
     assert_eq!(
         original_node.attribute_str("value"),
         rendered_node.attribute_str("value")
@@ -167,11 +180,13 @@ fn default_convention_preserves_existing_accessor_behavior() {
         rendered_node.attribute_int("total")
     );
 
+    // node_name_as_nsid
     assert_eq!(
         original_node.node_name_as_nsid(),
         rendered_node.node_name_as_nsid()
     );
 
+    // structured_name / structured_name_form_x / structured_name_form_y
     assert_eq!(
         original_node.structured_name(),
         rendered_node.structured_name()
@@ -185,6 +200,7 @@ fn default_convention_preserves_existing_accessor_behavior() {
         rendered_node.structured_name_form_y()
     );
 
+    // type_annotation ( 子 node の typed-input から取得 )
     let original_typed = original_node
         .children()
         .find(|c| c.dot_chain_kind() == "typed-input")
@@ -198,6 +214,7 @@ fn default_convention_preserves_existing_accessor_behavior() {
         rendered_typed.type_annotation()
     );
 
+    // dot_chain_depth / dot_chain_kind ( chain 内の dot prefix node から )
     let original_chain = original_node
         .children()
         .find(|c| c.dot_chain_kind() == "chain")
@@ -242,6 +259,7 @@ fn roundtrip_axis_2_procedure() {
     let original = Document::parse(input).expect("parse");
     let original_str = serialize(original.as_kdl());
 
+    // Convention.markers に Marker::Kind("call") を載せて axis 2 transform の対象 kind を提供
     let expand_conv = Convention::new()
         .with_marker(Marker::Kind("call".to_owned()))
         .with_procedure_form(AxisForm::Expand);

@@ -21,6 +21,7 @@ pub fn normalize(doc: &KdlDocument) -> String {
     for node in &doc.nodes {
         write_node(&mut out, node, 0);
     }
+    // 正規化出力は常に末尾改行で終わる
     if out.is_empty() {
         out.push('\n');
     }
@@ -31,14 +32,17 @@ fn write_node(out: &mut String, node: &KdlNode, depth: usize) {
     let indent = "    ".repeat(depth);
     out.push_str(&indent);
 
+    // type annotation
     if let Some(ty) = &node.ty {
         out.push('(');
         write_identifier_or_string(out, ty);
         out.push(')');
     }
 
+    // ノード名
     write_identifier_or_string(out, &node.name);
 
+    // entries: arguments (出現順) + properties (重複統合 + アルファベット順)
     let mut args: Vec<&KdlEntry> = Vec::new();
     let mut props: Vec<(&str, &KdlEntry)> = Vec::new();
 
@@ -46,6 +50,7 @@ fn write_node(out: &mut String, node: &KdlNode, depth: usize) {
         match entry {
             KdlEntry::Argument { .. } => args.push(entry),
             KdlEntry::Property { key, .. } => {
+                // 重複統合: 同キーは後勝ち
                 if let Some(existing) = props.iter_mut().find(|(k, _)| *k == key.as_str()) {
                     existing.1 = entry;
                 } else {
@@ -55,18 +60,22 @@ fn write_node(out: &mut String, node: &KdlNode, depth: usize) {
         }
     }
 
+    // プロパティをキー順でソート
     props.sort_by_key(|(k, _)| *k);
 
+    // arguments 出力
     for entry in &args {
         out.push(' ');
         write_entry(out, entry);
     }
 
+    // properties 出力
     for (_, entry) in &props {
         out.push(' ');
         write_entry(out, entry);
     }
 
+    // children
     match &node.children {
         Some(children) if !children.is_empty() => {
             out.push_str(" {\n");
@@ -128,6 +137,7 @@ fn write_quoted_string(out: &mut String, s: &str) {
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             c if is_newline(c) || is_disallowed(c) => {
+                // VT, NEL, LS, PS 等の改行文字 + BOM 等の disallowed code points
                 write!(out, "\\u{{{:04X}}}", c as u32).unwrap();
             }
             c => out.push(c),
@@ -154,6 +164,7 @@ fn can_be_bare_identifier(s: &str) -> bool {
     let mut chars = s.chars();
     let first = chars.next().unwrap();
 
+    // 全文字が identifier-char であることが前提
     if !is_identifier_char(first) {
         return false;
     }
@@ -163,6 +174,7 @@ fn can_be_bare_identifier(s: &str) -> bool {
         }
     }
 
+    // 禁止キーワード
     if is_reserved_keyword(s) {
         return false;
     }
@@ -171,6 +183,7 @@ fn can_be_bare_identifier(s: &str) -> bool {
     let is_dot = first == '.';
     let is_digit = first.is_ascii_digit();
 
+    // 先頭が digit → 数値と紛らわしい
     if is_digit {
         return false;
     }
@@ -181,6 +194,8 @@ fn can_be_bare_identifier(s: &str) -> bool {
             None => return true,                           // "+" or "-" は valid identifier
             Some(c) if c.is_ascii_digit() => return false, // "+1", "-2"
             Some('.') => {
+                // "+.", "-." は OK
+                // "+.1" は dotted-ident の数値紛らわしいケース
                 let third = s.chars().nth(2);
                 if let Some(c) = third {
                     if c.is_ascii_digit() {
@@ -208,10 +223,12 @@ fn can_be_bare_identifier(s: &str) -> bool {
 fn normalize_number(n: &KdlNumber) -> String {
     let raw = &n.raw;
 
+    // keyword number: #inf, #-inf, #nan
     if raw.starts_with('#') {
         return raw.clone();
     }
 
+    // sign を分離
     let (sign, rest) = if let Some(r) = raw.strip_prefix('-') {
         ("-", r)
     } else if let Some(r) = raw.strip_prefix('+') {
@@ -225,9 +242,12 @@ fn normalize_number(n: &KdlNumber) -> String {
         return format_prefixed_number(sign, &clean, radix);
     }
 
+    // decimal: アンダースコア除去
     let clean: String = rest.chars().filter(|&c| c != '_').collect();
 
+    // 指数部の有無で分岐
     if let Some(e_pos) = clean.find(['e', 'E']) {
+        // float with exponent
         let mantissa = &clean[..e_pos];
         let exp_part = &clean[e_pos + 1..];
         let normalized_exp = normalize_exponent(exp_part);
@@ -239,6 +259,7 @@ fn normalize_number(n: &KdlNumber) -> String {
             format!("{}E{}", normalized_mantissa, normalized_exp)
         }
     } else if clean.contains('.') {
+        // float without exponent
         let normalized = normalize_decimal_mantissa(&clean);
         if sign == "-" {
             format!("-{normalized}")
@@ -246,6 +267,7 @@ fn normalize_number(n: &KdlNumber) -> String {
             normalized
         }
     } else {
+        // integer
         let normalized = normalize_decimal_integer(&clean);
         if sign == "-" && normalized != "0" {
             format!("-{normalized}")
@@ -257,6 +279,7 @@ fn normalize_number(n: &KdlNumber) -> String {
 
 /// hex/octal/binary の digits を u128 経由で 10 進文字列に変換する。
 fn format_prefixed_number(sign: &str, digits: &str, radix: u32) -> String {
+    // u128 で試す
     if let Ok(val) = u128::from_str_radix(digits, radix) {
         if sign == "-" && val != 0 {
             format!("-{val}")
@@ -264,6 +287,7 @@ fn format_prefixed_number(sign: &str, digits: &str, radix: u32) -> String {
             format!("{val}")
         }
     } else {
+        // u128 を超える場合: 文字列ベースの変換
         let decimal = big_radix_to_decimal(digits, radix);
         if sign == "-" && decimal != "0" {
             format!("-{decimal}")
@@ -276,11 +300,14 @@ fn format_prefixed_number(sign: &str, digits: &str, radix: u32) -> String {
 /// u128 に収まらない任意精度の基数変換。
 /// digits は有効な hex/octal/binary 文字列。
 fn big_radix_to_decimal(digits: &str, radix: u32) -> String {
+    // 10 進の桁を Vec<u8> で保持(最下位が先頭)
     let mut result: Vec<u8> = vec![0];
 
     for ch in digits.chars() {
+        // パーサーが検証済みの有効な基数文字列のみ到達する
         let digit_val = ch.to_digit(radix).expect("parser-validated digit") as u8;
 
+        // result *= radix
         let mut carry: u16 = 0;
         for d in result.iter_mut() {
             let prod = (*d as u16) * (radix as u16) + carry;
@@ -292,6 +319,7 @@ fn big_radix_to_decimal(digits: &str, radix: u32) -> String {
             carry /= 10;
         }
 
+        // result += digit_val
         let mut carry: u16 = digit_val as u16;
         for d in result.iter_mut() {
             let sum = (*d as u16) + carry;
@@ -307,6 +335,7 @@ fn big_radix_to_decimal(digits: &str, radix: u32) -> String {
         }
     }
 
+    // 先行ゼロ除去 + 逆順
     while result.len() > 1 && *result.last().unwrap() == 0 {
         result.pop();
     }
@@ -378,6 +407,7 @@ mod tests {
             value: KdlValue::String("hello".to_string()),
         });
         let doc = make_doc(vec![node]);
+        // "hello" は有効な identifier なので裸で出力される
         assert_eq!(normalize(&doc), "node hello\n");
     }
 
@@ -517,6 +547,7 @@ mod tests {
 
     #[test]
     fn big_hex_conversion() {
+        // 0xABCDEF0123456789abcdef → 88 bits, u128 で OK
         assert_eq!(
             normalize_number(&KdlNumber {
                 raw: "0xABCDEF0123456789abcdef".to_string(),

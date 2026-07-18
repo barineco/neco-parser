@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+- `parse_spanned`: 各 node と entry に位置 span を付与する解析入口を追加。
+- `KdlSpan` と `SpannedKdlDocument`: 位置付きの span と document の公開型を追加。
+- `SpannedKdlNode` と `SpannedKdlEntry`: 位置付きの node と entry の公開型を追加。
+- `into_document`: 位置付き値から通常の `KdlDocument` への変換を追加。
+- `line_col`: byte offset を行と列へ導く変換を追加。`KdlError` の位置をこれに統一。
+
 ## 0.4.0
 
 - 数値型の構造体フィールドを非公開化し、原文と解釈値を検証する構築関数を追加。

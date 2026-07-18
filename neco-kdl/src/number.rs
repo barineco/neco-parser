@@ -45,6 +45,7 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
         None => return Ok(None),
     };
 
+    // 数値は digit または sign + digit / sign + 0x/0o/0b で始まる
     let is_sign = ch == '+' || ch == '-';
     let is_digit = ch.is_ascii_digit();
 
@@ -55,6 +56,7 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
     let saved = s.save();
     let start = s.byte_offset();
 
+    // sign を消費
     let has_sign = if is_sign {
         s.advance();
         true
@@ -62,9 +64,11 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
         false
     };
 
+    // sign の後に digit が来なければ数値ではない(identifier かもしれない)
     match s.peek() {
         Some(ch2) if ch2.is_ascii_digit() => {}
         Some('.') => {
+            // `.1` は数値ではない(dotted-ident に当たる)
             s.restore(saved);
             return Ok(None);
         }
@@ -78,15 +82,19 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
         }
     }
 
+    // 0x, 0o, 0b プレフィックスチェック
     if s.peek() == Some('0') {
         if let Some(radix) = s.peek_next().and_then(radix_for_prefix) {
             return parse_prefixed(s, start, radix);
         }
     }
 
+    // decimal: integer ('.' integer)? exponent?
     consume_integer(s);
 
+    // 小数部
     let has_dot = if s.peek() == Some('.') {
+        // '.' の後に digit が必要('_' は不可 : underscore_at_start_of_fraction_fail)
         match s.peek_next() {
             Some(ch) if ch.is_ascii_digit() => {
                 s.advance(); // '.'
@@ -94,6 +102,7 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
                 true
             }
             _ => {
+                // `1.` or `1._7` : 小数点はあるが小数部がない → エラー
                 s.advance(); // '.' を消費して報告
                 return Err(s.make_error(KdlErrorKind::InvalidNumber));
             }
@@ -102,6 +111,7 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
         false
     };
 
+    // 指数部
     let has_exp = if matches!(s.peek(), Some('e') | Some('E')) {
         s.advance(); // 'e'/'E'
         if matches!(s.peek(), Some('+') | Some('-')) {
@@ -111,6 +121,7 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
             return Err(s.make_error(KdlErrorKind::InvalidNumber));
         }
         consume_integer(s);
+        // 指数部の後に再び 'e'/'E' が来たらエラー (multiple_es_in_float_fail)
         if matches!(s.peek(), Some('e') | Some('E')) {
             return Err(s.make_error(KdlErrorKind::InvalidNumber));
         }
@@ -119,6 +130,7 @@ pub(crate) fn parse_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumber>, Kdl
         false
     };
 
+    // 数値の後に identifier-char が続くのは不正 (0n, +0n, 0x10g10 等)
     if let Some(ch) = s.peek() {
         if crate::scan::is_identifier_char(ch) && ch != '.' {
             return Err(s.make_error(KdlErrorKind::InvalidNumber));
@@ -153,8 +165,10 @@ pub(crate) fn parse_keyword_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumb
     let start = s.byte_offset();
     s.advance(); // '#'
 
+    // "#inf", "#-inf", "#nan"
     match s.peek() {
         Some('i') => {
+            // #inf
             s.advance();
             if s.peek() == Some('n') {
                 s.advance();
@@ -173,6 +187,7 @@ pub(crate) fn parse_keyword_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumb
             Ok(None)
         }
         Some('-') => {
+            // #-inf
             s.advance();
             if s.peek() == Some('i') {
                 s.advance();
@@ -194,6 +209,7 @@ pub(crate) fn parse_keyword_number(s: &mut Scanner<'_>) -> Result<Option<KdlNumb
             Ok(None)
         }
         Some('n') => {
+            // #nan
             s.advance();
             if s.peek() == Some('a') {
                 s.advance();
@@ -227,6 +243,7 @@ fn parse_prefixed(
     s.advance(); // '0'
     s.advance(); // 'x'/'o'/'b'
 
+    // プレフィックスの直後に有効な digit が必要
     match s.peek() {
         Some(ch) if ch.is_digit(radix) => {
             s.advance();
@@ -234,6 +251,7 @@ fn parse_prefixed(
         _ => return Err(s.make_error(KdlErrorKind::InvalidNumber)),
     }
 
+    // 残りの digit と underscore
     while let Some(ch) = s.peek() {
         if ch.is_digit(radix) || ch == '_' {
             s.advance();
@@ -242,6 +260,7 @@ fn parse_prefixed(
         }
     }
 
+    // 数値の後に identifier-char が続くのは不正 (0x10g10 等)
     if let Some(ch) = s.peek() {
         if crate::scan::is_identifier_char(ch) {
             return Err(s.make_error(KdlErrorKind::InvalidNumber));
@@ -251,6 +270,7 @@ fn parse_prefixed(
     let end = s.byte_offset();
     let raw = s.slice(start, end).to_string();
 
+    // underscore を除去して解釈
     let clean: String = raw.chars().filter(|&c| c != '_').collect();
     let (as_i64, as_f64) = interpret_prefixed(&clean, radix);
 
@@ -425,6 +445,7 @@ mod tests {
         let n = num(big);
         assert_eq!(n.raw, "99999999999999999999");
         assert_eq!(n.as_i64, None);
+        // f64 は精度落ちるが値は持てる
         assert!(n.as_f64.is_some());
     }
 

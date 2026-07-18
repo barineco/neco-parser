@@ -37,22 +37,30 @@ pub(crate) fn parse_identifier_string(s: &mut Scanner<'_>) -> Result<Option<Stri
     let is_dot = ch == '.';
     let is_digit = ch.is_ascii_digit();
 
+    // unambiguous-ident: 先頭が digit, sign, '.' でない
+    // signed-ident: sign + optional continuation
+    // dotted-ident: sign? + '.' + optional continuation
     if !is_sign && !is_dot && !is_digit {
+        // unambiguous-ident
         return collect_identifier(s);
     }
 
     if is_digit {
+        // 数字で始まるものは identifier ではない
         return Ok(None);
     }
 
+    // sign or dot で始まるケースを save/restore でチェッ���
     let saved = s.save();
 
     if is_sign {
         s.advance(); // sign を消費
         match s.peek() {
+            // signed-ident: sign の後に (non-digit, non-dot) identifier-char が来る
             Some(ch2) if is_identifier_char(ch2) && !ch2.is_ascii_digit() && ch2 != '.' => {
                 return collect_identifier_from(s, ch);
             }
+            // dotted-ident: sign + '.' + ...
             Some('.') => {
                 s.advance(); // '.' を消費
                 match s.peek() {
@@ -62,6 +70,7 @@ pub(crate) fn parse_identifier_string(s: &mut Scanner<'_>) -> Result<Option<Stri
                         buf.push('.');
                         return collect_identifier_continue(s, buf);
                     }
+                    // sign + '.' のみ (例: "+.", "-.")
                     _ => {
                         let mut buf = String::new();
                         buf.push(ch);
@@ -70,7 +79,10 @@ pub(crate) fn parse_identifier_string(s: &mut Scanner<'_>) -> Result<Option<Stri
                     }
                 }
             }
+            // sign のみ (例: "+", "-")
+            // ただし "-inf" は特殊: identifier としてパースされてから keyword チェック
             _ => {
+                // sign 単独は valid な identifier
                 let buf = String::from(ch);
                 return check_keyword(buf, &saved, s);
             }
@@ -85,6 +97,7 @@ pub(crate) fn parse_identifier_string(s: &mut Scanner<'_>) -> Result<Option<Stri
                 buf.push('.');
                 return collect_identifier_continue(s, buf);
             }
+            // '.' 単独
             _ => {
                 let buf = String::from('.');
                 return check_keyword(buf, &saved, s);
@@ -139,16 +152,11 @@ fn collect_identifier_continue(
 fn check_keyword(
     buf: String,
     saved: &crate::scan::ScannerState<'_>,
-    _s: &mut Scanner<'_>,
+    s: &mut Scanner<'_>,
 ) -> Result<Option<String>, KdlError> {
     if crate::scan::is_reserved_keyword(&buf) {
-        let line = saved.line();
-        let col = saved.col();
-        Err(KdlError {
-            line,
-            col,
-            kind: KdlErrorKind::BareKeyword,
-        })
+        // 裸キーワードの error はキーワード先頭 ( saved の位置 ) を指す。
+        Err(s.make_error_at(saved.byte_offset(), KdlErrorKind::BareKeyword))
     } else {
         Ok(Some(buf))
     }
@@ -168,9 +176,11 @@ pub(crate) fn parse_quoted_string(s: &mut Scanner<'_>) -> Result<Option<String>,
             s.advance(); // 3 つ目の '"' → multiline string
             return parse_multiline_quoted_body(s).map(Some);
         }
+        // `""` : 空文字列
         return Ok(Some(String::new()));
     }
 
+    // single-line quoted string
     parse_single_line_quoted_body(s).map(Some)
 }
 
@@ -208,38 +218,48 @@ fn parse_single_line_quoted_body(s: &mut Scanner<'_>) -> Result<String, KdlError
 /// 5. 改行を LF に正規化
 /// 6. 残りのエスケープを解決
 fn parse_multiline_quoted_body(s: &mut Scanner<'_>) -> Result<String, KdlError> {
+    // `"""` の直後は改行が必要
     if !s.consume_newline() {
         return Err(s.make_error(KdlErrorKind::UnclosedString));
     }
 
+    // 1 段階目: 本体を収集。whitespace escape は即時解決、他のエスケープはマーカーで保持。
+    // 閉じ `"""` を探す。
     let mut raw_lines: Vec<String> = Vec::new();
     let mut current_line = String::new();
 
     loop {
         match s.peek() {
             Some('"') => {
+                // `"""` チェック
                 s.advance();
                 if s.peek() == Some('"') {
                     s.advance();
                     if s.peek() == Some('"') {
                         s.advance();
+                        // 閉じ `"""` を見つけた
                         raw_lines.push(current_line);
                         return process_multiline(raw_lines);
                     }
+                    // `""` : 本体の一部
                     current_line.push('"');
                     current_line.push('"');
                     continue;
                 }
+                // 単一の `"` : 本体の一部
                 current_line.push('"');
                 continue;
             }
             Some('\\') => {
                 s.advance();
+                // whitespace escape を即時解決
                 match s.peek() {
                     Some(ch) if is_unicode_space(ch) || is_newline(ch) => {
                         consume_whitespace_escape(s);
                     }
                     Some(ch) => {
+                        // 他のエスケープはそのまま保持(後で解決)
+                        // エスケープ対象文字も消費する(`\"` が `"""` チェックに影響しないように)
                         current_line.push('\\');
                         current_line.push(ch);
                         s.advance();
@@ -273,8 +293,13 @@ fn process_multiline(raw_lines: Vec<String>) -> Result<String, KdlError> {
         return Ok(String::new());
     }
 
+    // 最後の行が閉じプレフィックス
     let prefix = raw_lines.last().unwrap();
 
+    // プレフィックスはホワイトスペースのみで構成されている必要がある
+    // (パーサーが閉じ `"""` の前を正しく分割しているので、ここでは検証不要)
+
+    // 本体は最初の行〜最後から2番目の行
     let body_lines = &raw_lines[..raw_lines.len() - 1];
 
     let mut result = String::new();
@@ -283,10 +308,13 @@ fn process_multiline(raw_lines: Vec<String>) -> Result<String, KdlError> {
             result.push('\n'); // 改行は LF に正規化済み
         }
 
+        // 空白のみの行はプレフィックス検証免除、空行として扱う
         if line.chars().all(is_unicode_space) {
+            // 空行(何も追加しない)
             continue;
         }
 
+        // プレフィックス一致チェック
         if !line.starts_with(prefix.as_str()) {
             return Err(KdlError {
                 line: 0,
@@ -295,8 +323,10 @@ fn process_multiline(raw_lines: Vec<String>) -> Result<String, KdlError> {
             });
         }
 
+        // プレフィックスを除去した残りを追加
         let stripped = &line[prefix.len()..];
 
+        // 残りのエスケープを解決
         let resolved = resolve_escapes(stripped)?;
         result.push_str(&resolved);
     }
@@ -320,6 +350,7 @@ fn resolve_escapes(input: &str) -> Result<String, KdlError> {
                 Some('t') => result.push('\t'),
                 Some('s') => result.push(' '),
                 Some('u') => {
+                    // \u{XXXX}
                     match chars.next() {
                         Some('{') => {}
                         _ => {
@@ -387,28 +418,37 @@ pub(crate) fn parse_raw_string(s: &mut Scanner<'_>) -> Result<Option<String>, Kd
 
     let saved = s.save();
 
+    // `#` の数をカウント
     let mut hash_count = 0usize;
     while s.peek() == Some('#') {
         s.advance();
         hash_count += 1;
     }
 
+    // `#` の後に `"` が必要
     if s.peek() != Some('"') {
         s.restore(saved);
         return Ok(None);
     }
     s.advance(); // '"'
 
+    // multiline raw string: `"""` + newline
     if s.peek() == Some('"') {
         let saved2 = s.save();
         s.advance(); // 2nd '"'
         if s.peek() == Some('"') {
             s.advance(); // 3rd '"'
+                         // multiline raw string
             return parse_multiline_raw_body(s, hash_count).map(Some);
         }
+        // `""` の後に closing hash が来るかチェック
         s.restore(saved2);
+        // single-char `"` は本体の一部ではない : `#""#` は空文字列
+        // ここは tricky: `#""#` = 空文字列。restore して single-line として処理
+        // → `"` の後に即座に `"` + hash_count 個の `#` なら空文字列
     }
 
+    // single-line raw string
     parse_single_line_raw_body(s, hash_count).map(Some)
 }
 
@@ -422,6 +462,7 @@ fn parse_single_line_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<
             Some('"') => {
                 s.advance(); // '"'
 
+                // N 個の '#' が続くかチェック
                 let mut matched = 0;
                 while matched < hash_count && s.peek() == Some('#') {
                     s.advance();
@@ -430,6 +471,7 @@ fn parse_single_line_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<
                 if matched == hash_count {
                     return Ok(buf);
                 }
+                // マッチしなかった: `"` と途中の `#` を本体に追加
                 buf.push('"');
                 for _ in 0..matched {
                     buf.push('#');
@@ -453,6 +495,7 @@ fn parse_single_line_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<
 /// multiline raw string の本体。`"""` は消費済み。
 /// 閉じ: 改行 + ホワイトスペース* + `"""` + N 個の `#`
 fn parse_multiline_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<String, KdlError> {
+    // `"""` の直後は改行が必要
     if !s.consume_newline() {
         return Err(s.make_error(KdlErrorKind::UnclosedString));
     }
@@ -468,6 +511,7 @@ fn parse_multiline_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<St
                     s.advance();
                     if s.peek() == Some('"') {
                         s.advance();
+                        // `"""` + hash_count 個の `#` をチェック
                         let mut matched = 0;
                         while matched < hash_count && s.peek() == Some('#') {
                             s.advance();
@@ -477,6 +521,7 @@ fn parse_multiline_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<St
                             raw_lines.push(current_line);
                             return process_multiline_raw(raw_lines);
                         }
+                        // マッチしなかった
                         current_line.push('"');
                         current_line.push('"');
                         current_line.push('"');
@@ -580,6 +625,7 @@ fn parse_escape(s: &mut Scanner<'_>) -> Result<Option<char>, KdlError> {
             s.advance();
             parse_unicode_escape(s).map(Some)
         }
+        // whitespace escape: \ + (unicode-space | newline)+ → 全て破棄
         Some(ch) if is_unicode_space(ch) || is_newline(ch) => {
             consume_whitespace_escape(s);
             Ok(None)
@@ -614,6 +660,7 @@ fn parse_unicode_escape(s: &mut Scanner<'_>) -> Result<char, KdlError> {
     }
     let code_point = u32::from_str_radix(&hex, 16)
         .map_err(|_| s.make_error(KdlErrorKind::InvalidUnicodeEscape))?;
+    // サロゲートと 0x10FFFF 超えを拒否
     char::from_u32(code_point).ok_or_else(|| s.make_error(KdlErrorKind::InvalidUnicodeEscape))
 }
 
@@ -755,6 +802,8 @@ mod tests {
         assert_eq!(parse_string(&mut s).unwrap(), "bare-id");
     }
 
+    // --- Multiline quoted string tests ---
+
     #[test]
     fn multiline_basic() {
         let input = "\"\"\"\n    hello\n    world\n    \"\"\"";
@@ -789,11 +838,14 @@ mod tests {
 
     #[test]
     fn multiline_blank_line() {
+        // 空白のみの行はプレフィックス検証免除
         let input = "\"\"\"\n    hello\n\n    world\n    \"\"\"";
         let mut s = Scanner::new(input);
         let result = parse_quoted_string(&mut s).unwrap();
         assert_eq!(result, Some("hello\n\nworld".to_string()));
     }
+
+    // --- Raw string tests ---
 
     #[test]
     fn raw_string_basic() {

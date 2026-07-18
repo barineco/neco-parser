@@ -263,6 +263,7 @@ fn kdl_official_test_suite_parse() {
         let should_fail = stem.ends_with("_fail");
         let input = fs::read_to_string(path).unwrap();
 
+        // 各ファイルをスレッドで実行してタイムアウト
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let result = neco_kdl::parse(&input);
@@ -310,6 +311,98 @@ fn kdl_official_test_suite_parse() {
             total_problems
         );
     }
+}
+
+/// 位置付き node の span 整形式性を再帰的に検査する。
+///
+/// 半開区間の整合、文字境界、子要素の親への包含を確認する。
+fn check_span_well_formedness(
+    input: &str,
+    node: &neco_kdl::SpannedKdlNode,
+    label: &str,
+) -> Result<(), String> {
+    let node_span = node.span();
+    if node_span.start >= node_span.end || node_span.end > input.len() {
+        return Err(format!(
+            "{label}: node span {node_span:?} is not a valid range"
+        ));
+    }
+    if !input.is_char_boundary(node_span.start) || !input.is_char_boundary(node_span.end) {
+        return Err(format!(
+            "{label}: node span {node_span:?} is not on char boundaries"
+        ));
+    }
+
+    for entry in node.entries() {
+        let entry_span = entry.span();
+        if entry_span.start >= entry_span.end {
+            return Err(format!(
+                "{label}: entry span {entry_span:?} is not a valid range"
+            ));
+        }
+        if !input.is_char_boundary(entry_span.start) || !input.is_char_boundary(entry_span.end) {
+            return Err(format!(
+                "{label}: entry span {entry_span:?} is not on char boundaries"
+            ));
+        }
+        if entry_span.start < node_span.start || entry_span.end > node_span.end {
+            return Err(format!(
+                "{label}: entry span {entry_span:?} is not contained in node span {node_span:?}"
+            ));
+        }
+    }
+
+    for child in node.children().unwrap_or(&[]) {
+        let child_span = child.span();
+        if child_span.start < node_span.start || child_span.end > node_span.end {
+            return Err(format!(
+                "{label}: child span {child_span:?} is not contained in node span {node_span:?}"
+            ));
+        }
+        check_span_well_formedness(input, child, label)?;
+    }
+
+    Ok(())
+}
+
+/// 判定条件 2: 受理した公式ベクターで span の整形式性を検証する ( 恒等式比較は用いない )。
+#[test]
+fn official_vectors_yield_well_formed_spans() {
+    let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/kdl-test-cases/input");
+
+    let mut files: Vec<PathBuf> = fs::read_dir(&input_dir)
+        .expect("input dir should exist")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("kdl"))
+        .collect();
+    files.sort();
+
+    let mut checked = 0;
+    let mut errors = Vec::new();
+
+    for path in &files {
+        let stem = path.file_stem().unwrap().to_str().unwrap().to_string();
+        if stem.ends_with("_fail") {
+            continue;
+        }
+        let input = fs::read_to_string(path).unwrap();
+
+        let document = match neco_kdl::parse_spanned(&input) {
+            Ok(document) => document,
+            Err(_) => continue,
+        };
+
+        for node in document.nodes() {
+            if let Err(message) = check_span_well_formedness(&input, node, &stem) {
+                errors.push(message);
+            }
+        }
+        checked += 1;
+    }
+
+    assert!(checked > 0, "no accepted vectors were checked");
+    assert!(errors.is_empty(), "span well-formedness errors: {errors:?}");
 }
 
 /// 公式テストスイートの正規化出力比較テスト。

@@ -11,6 +11,7 @@
   - `#true` / `#false` / `#null` / `#inf` / `#-inf` / `#nan` キーワード
   - 16 進数・8 進数・2 進数リテラル、アンダースコア区切り
   - 版マーカー (`/- kdl-version 2`)
+- `parse_spanned` による位置付き構文木 ( 各要素に位置 span を付与 )
 - `serialize()` および `Display` 実装によるシリアライズ ( 往復安全 )
 - 正規化出力 ( 公式テストスイートの `expected_kdl` と完全一致 )
 - フォーマット非依存の `Value` 変換 (`Value` <-> `KdlDocument`)
@@ -21,7 +22,7 @@
 
 ```toml
 [dependencies]
-neco-kdl = "0.2"
+neco-kdl = "0.5"
 ```
 
 ```rust
@@ -59,7 +60,58 @@ fn main() {
 pub fn parse(input: &str) -> Result<KdlDocument, KdlError>
 ```
 
-KDL v2 ドキュメントをパースして `KdlDocument` を返す。
+KDL v2 ドキュメントをパースして `KdlDocument` を返す。結果は `parse_spanned` から導出するため、両入口は同じ入力を受理し同じエラーを返す。
+
+### `parse_spanned`
+
+```rust
+pub fn parse_spanned(input: &str) -> Result<SpannedKdlDocument, KdlError>
+```
+
+解析結果の各要素に位置情報を付与する。span は入力 byte の半開区間である。境界の規則は次のとおり。
+
+- node の開始は前置の型注釈、型注釈が無い場合は name の先頭。
+- node の終端は最後に採用した要素の消費直後で、末尾の空白や区切りを含めない。
+- entry の開始は、argument では値の型注釈または値の先頭、property では key の先頭。終端は値の末尾。
+- slashdash で除外した要素も親の span に含める。
+
+アクセサ:
+
+```rust
+pub struct KdlSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl SpannedKdlDocument {
+    pub fn nodes(&self) -> &[SpannedKdlNode];
+    pub fn into_document(self) -> KdlDocument;
+}
+
+impl SpannedKdlNode {
+    pub fn span(&self) -> KdlSpan;
+    pub fn ty(&self) -> Option<&str>;
+    pub fn name(&self) -> &str;
+    pub fn entries(&self) -> &[SpannedKdlEntry];
+    pub fn children(&self) -> Option<&[SpannedKdlNode]>;
+    pub fn into_node(self) -> KdlNode;
+}
+
+impl SpannedKdlEntry {
+    pub fn span(&self) -> KdlSpan;
+    pub fn entry(&self) -> &KdlEntry;
+}
+```
+
+`into_document` は span を除いて `parse` と同じ結果を返す。
+
+### `line_col`
+
+```rust
+pub fn line_col(input: &str, offset: usize) -> Option<(usize, usize)>
+```
+
+byte offset を一始まりの行と列へ導く。範囲外と文字の途中には `None` を返す。改行の規則は解析と同一で、`KdlError` の位置もこれに従う。
 
 ### `serialize`
 
@@ -124,6 +176,10 @@ impl KdlNumber {
 | `KdlDocument` | パース結果のルート。`nodes()` でノード一覧を取得できる |
 | `KdlNode` | ノード。`ty()`、`name()`、`entries()`、`children()` で各要素を参照 |
 | `KdlEntry` | `Argument`(位置引数)または `Property`(名前付き引数) |
+| `KdlSpan` | UTF-8 byte の半開区間。公開 field を持つ |
+| `SpannedKdlDocument` | 位置付き document のルート。通常値へ変換できる |
+| `SpannedKdlNode` | span と通常 node を持つ位置付きノード |
+| `SpannedKdlEntry` | span と通常 entry を持つ位置付きエントリ |
 | `KdlValue` | `String(String)`、`Number(KdlNumber)`、`Bool(bool)`、`Null` |
 | `KdlNumber` | raw 文法と整数・浮動小数点の解釈値を検証する数値 |
 | `NumberError` | raw 文法と解釈値の不一致 |

@@ -168,9 +168,12 @@ mod tests {
     /// `rg fused_form|mod_key v` driver は本 enum doc comment の literal 文字列で hit。
     #[test]
     fn property_child_fused_form_only() {
+        // 構築可能な variant は 3 つだけ ( Expand / Collapse は fused form のみ採る )
         let _off = PropertyChildForm::Off;
         let _expand = PropertyChildForm::Expand;
         let _collapse = PropertyChildForm::Collapse;
+        // PropertyChildForm::Nested は存在しない ( enum 定義が axiom )
+        // → コンパイルが通った時点で literal 検査済
         let names = format!(
             "{:?} {:?} {:?}",
             PropertyChildForm::Off,

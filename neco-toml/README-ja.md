@@ -8,7 +8,7 @@
 
 - 行指向の `key = value` 解析
 - 空値の後続 `- item` 行をリストへ変換
-- `null` / `bool` / `number` / `string` のスカラー解析
+- null / bool / number / string のスカラー解析
 - フィールド順序を `Vec<(String, TomlValue)>` として保持
 - 行指向の位置とメッセージを持つ `ParseError`
 
@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | 項目 | 説明 |
 |---|---|
 | `parse(input: &str) -> Result<TomlValue, ParseError>` | 対応する TOML 部分集合の読み込み |
-| `TomlValue` | `Null`、 `Bool`、 `Number(f64)`、 `String`、 `List`、 順序付き `Map` |
+| `TomlValue` | 解析結果の値 ( バリアントは下記 ) |
 | `ParseError` | 行位置とメッセージ |
+
+`TomlValue` のバリアント:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` ( 順序付き )
 
 ## 対応範囲
 
-平坦な設定ファイル形の TOML とスカラー / 単純配列を扱います。重複キーは出現順で保持し、 TOML v1.0 文法全体は実装しません。
+平坦な設定ファイル形の TOML とスカラー / 単純配列を扱います。重複キーは出現順で保持し、この部分集合として TOML v1.0 文法を実装します。
 
 ## ライセンス
 

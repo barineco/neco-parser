@@ -74,14 +74,9 @@ impl Document {
             .find(|node| node.structured_name().identifier == *identifier)
     }
 
-    /// Convention の per-axis 正規形宣言に従って軸 1-5 の expand / collapse を crate 規定順序で適用。
-    ///
-    /// 軸間順序は `軸 5 ( kind keyword ) → 軸 4 ( type annotation ) → 軸 1 ( namespace ) →
-    /// 軸 2 ( procedure ) → 軸 3 ( property-child )` で固定 ( marker 境界保護順 )。
-    /// 軸 ごとの `AxisForm::Off` / `PropertyChildForm::Off` は no-op。
-    /// 軸 4 / 5 で plain `Expand` / `Collapse` ( marker なし ) は no-op、
-    /// 軸 1 / 2 で `*WithMarker` variant も no-op。
-    /// 軸 2 ( procedure ) は Convention の `Marker::Kind` を per-kind dot-chain target として再利用する。
+    /// Convention の per-axis 正規形宣言に従って、 軸 5 / 4 / 1 / 2 / 3 の順で各軸の変換を
+    /// 適用する。 各軸を Off にすると no-op になる。 順序の根拠は docs/reference/syntax.md
+    /// の Convention の正規形宣言の節を参照。
     pub fn render_as(&self, conv: &Convention) -> Document {
         let mut doc = self.clone();
         doc = apply_axis_5(doc, &conv.kind_keyword_form, conv);

@@ -58,16 +58,14 @@ fn encode_number(number: f64, output: &mut Vec<u8>) -> Result<(), EncodeError> {
 fn encode_string(text: &str, output: &mut Vec<u8>) {
     output.push(b'"');
     for ch in text.chars() {
-        match ch {
-            '"' => output.extend_from_slice(br#"\""#),
-            '\\' => output.extend_from_slice(br#"\\"#),
-            '\u{0008}' => output.extend_from_slice(br#"\b"#),
-            '\u{000C}' => output.extend_from_slice(br#"\f"#),
-            '\n' => output.extend_from_slice(br#"\n"#),
-            '\r' => output.extend_from_slice(br#"\r"#),
-            '\t' => output.extend_from_slice(br#"\t"#),
-            '\u{0000}'..='\u{001F}' => encode_control_escape(ch as u32, output),
-            _ => {
+        match crate::json_string::classify(ch) {
+            crate::json_string::Escape::Short(escaped) => {
+                output.extend_from_slice(escaped.as_bytes())
+            }
+            crate::json_string::Escape::Control(code) => {
+                encode_control_escape(u32::from(code), output)
+            }
+            crate::json_string::Escape::Verbatim => {
                 let mut buffer = [0_u8; 4];
                 let encoded = ch.encode_utf8(&mut buffer);
                 output.extend_from_slice(encoded.as_bytes());

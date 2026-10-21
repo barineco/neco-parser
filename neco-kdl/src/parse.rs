@@ -41,7 +41,6 @@ pub fn parse_spanned(input: &str) -> Result<SpannedKdlDocument, KdlError> {
     Ok(SpannedKdlDocument::new(nodes))
 }
 
-/// version marker: `/-` unicode-space* `kdl-version` unicode-space+ (`1` | `2`) unicode-space* newline
 fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     let saved = s.save();
     if s.peek() != Some('/') {
@@ -54,7 +53,6 @@ fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     }
     s.advance();
 
-    // unicode-space*
     while let Some(ch) = s.peek() {
         if is_unicode_space(ch) {
             s.advance();
@@ -63,7 +61,6 @@ fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
         }
     }
 
-    // "kdl-version"
     let marker = "kdl-version";
     for expected in marker.chars() {
         match s.peek() {
@@ -77,7 +74,6 @@ fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
         }
     }
 
-    // unicode-space+
     match s.peek() {
         Some(ch) if is_unicode_space(ch) => {
             s.advance();
@@ -95,7 +91,6 @@ fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
         }
     }
 
-    // '1' | '2'
     match s.peek() {
         Some('1') | Some('2') => {
             s.advance();
@@ -106,7 +101,6 @@ fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
         }
     }
 
-    // unicode-space*
     while let Some(ch) = s.peek() {
         if is_unicode_space(ch) {
             s.advance();
@@ -115,7 +109,6 @@ fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
         }
     }
 
-    // newline
     if !s.consume_newline() && !s.is_eof() {
         s.restore(saved);
         return Ok(());
@@ -124,8 +117,6 @@ fn skip_version_marker(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     Ok(())
 }
 
-/// nodes := (line-space* node)* line-space*
-/// `in_children` が true の場合、`}` で終了する。
 fn parse_nodes(s: &mut Scanner<'_>, context: NodeContext) -> Result<Vec<SpannedKdlNode>, KdlError> {
     let mut nodes = Vec::new();
 
@@ -139,14 +130,12 @@ fn parse_nodes(s: &mut Scanner<'_>, context: NodeContext) -> Result<Vec<SpannedK
             break;
         }
 
-        // slashdash でノード全体をスキップする可能性
         let slashdash = try_consume_slashdash(s)?;
 
         skip_line_space(s)?;
 
         if context.is_in_children() && s.peek() == Some('}') {
             if slashdash {
-                // slashdash の後に } は不正
                 return Err(s.make_error(KdlErrorKind::InvalidSlashdash));
             }
             break;
@@ -158,7 +147,6 @@ fn parse_nodes(s: &mut Scanner<'_>, context: NodeContext) -> Result<Vec<SpannedK
             break;
         }
 
-        // ノードをパース
         let before = s.byte_offset();
         let node = parse_base_node(s)?;
 
@@ -167,14 +155,12 @@ fn parse_nodes(s: &mut Scanner<'_>, context: NodeContext) -> Result<Vec<SpannedK
                 nodes.push(node);
             }
         } else if s.byte_offset() == before {
-            // 何も消費されなかった : 不正な文字
             return Err(s.make_error(match s.peek() {
                 Some(ch) => KdlErrorKind::UnexpectedChar(ch),
                 None => KdlErrorKind::UnexpectedEof,
             }));
         }
 
-        // node terminator
         if !context.is_in_children() || s.peek() != Some('}') {
             skip_node_terminator(s, context)?;
         }
@@ -183,7 +169,6 @@ fn parse_nodes(s: &mut Scanner<'_>, context: NodeContext) -> Result<Vec<SpannedK
     Ok(nodes)
 }
 
-/// `/-` line-space* を試みる。成功したら true。
 fn try_consume_slashdash(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     if s.peek() != Some('/') {
         return Ok(false);
@@ -200,9 +185,7 @@ fn try_consume_slashdash(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     }
 }
 
-/// node-terminator := single-line-comment | newline | ';' | eof
 fn skip_node_terminator(s: &mut Scanner<'_>, context: NodeContext) -> Result<(), KdlError> {
-    // ノードの後のホワイトスペースは既に skip 済みのはず
     match s.peek() {
         Some(';') => {
             s.advance();
@@ -225,33 +208,21 @@ fn skip_node_terminator(s: &mut Scanner<'_>, context: NodeContext) -> Result<(),
             s.consume_newline();
             Ok(())
         }
-        Some('}') if context.is_in_children() => {
-            // final-node: ターミネーター省略可
-            Ok(())
-        }
-        None => Ok(()), // EOF
-        _ => {
-            // terminator が来るべき位置に不正な文字
-            Err(s.make_error(KdlErrorKind::UnexpectedChar(s.peek().unwrap())))
-        }
+        Some('}') if context.is_in_children() => Ok(()),
+        None => Ok(()),
+        _ => Err(s.make_error(KdlErrorKind::UnexpectedChar(s.peek().unwrap()))),
     }
 }
 
-/// base-node をパースする。
-///
-/// 終端 offset は各要素の消費直後 ( node-space 読み飛ばし前 ) に記録する。
 fn parse_base_node(s: &mut Scanner<'_>) -> Result<Option<SpannedKdlNode>, KdlError> {
-    // node の開始 offset は前置の型注釈、型注釈が無い場合は name の先頭。
     let node_start = s.byte_offset();
 
-    // type annotation?
     let ty = try_parse_type_annotation(s)?;
 
     if ty.is_some() {
         skip_node_space_optional(s)?;
     }
 
-    // ノード名 (string)
     let name = match parse_string_if_available(s)? {
         Some(name) => name,
         None => {
@@ -262,56 +233,47 @@ fn parse_base_node(s: &mut Scanner<'_>) -> Result<Option<SpannedKdlNode>, KdlErr
         }
     };
 
-    // 要素を持たない node の終端は name の消費直後。
     let mut node_end = s.byte_offset();
 
     let mut entries = Vec::new();
     let mut children = None;
 
-    // entries と children をパース
     loop {
         let had_space = skip_node_space_optional(s)?;
 
-        // スペースなしの場合
         if !had_space {
             match s.peek() {
-                Some('{') => {}                               // children block : スペースなしでも合法
-                Some('/') if s.peek_next() == Some('-') => {} // slashdash : スペースなしでも合法
-                _ => break,                                   // terminator or EOF : ノード終了
+                Some('{') => {}
+                Some('/') if s.peek_next() == Some('-') => {}
+                _ => break,
             }
         }
 
-        // slashdash
         let entry_slashdash = try_consume_entry_slashdash(s)?;
 
-        // children block?
         if s.peek() == Some('{') {
             if entry_slashdash {
-                // slashdash された子ブロック。出力に残さず span にだけ含める。
-                s.advance(); // '{'
+                s.advance();
                 let _discarded = parse_nodes(s, NodeContext::InChildren)?;
                 s.expect('}')?;
                 node_end = s.byte_offset();
-                // slashdash children の後は children block か slashdash か terminator のみ
-                // entry は来てはいけない (slashdash_child_block_before_entry_err_fail)
+
                 skip_node_space_optional(s)?;
                 match s.peek() {
-                    Some('{') | Some(';') | None => {} // children block or terminator
-                    Some('/') => {}                    // slashdash or comment : 次のループで判定
-                    Some(ch) if is_newline(ch) => {}   // newline terminator
-                    Some('}') => {}                    // children end
+                    Some('{') | Some(';') | None => {}
+                    Some('/') => {}
+                    Some(ch) if is_newline(ch) => {}
+                    Some('}') => {}
                     _ => return Err(s.make_error(KdlErrorKind::InvalidSlashdash)),
                 }
                 continue;
             }
-            s.advance(); // '{'
+            s.advance();
             let child_nodes = parse_nodes(s, NodeContext::InChildren)?;
             s.expect('}')?;
             node_end = s.byte_offset();
             children = Some(child_nodes);
 
-            // children の後に slashdash された children block が来る可能性
-            // スペースなしでも `/-` は合法。slashdash children も node span に含める。
             loop {
                 skip_node_space_optional(s)?;
                 if try_consume_slashdash_children(s)? {
@@ -323,8 +285,6 @@ fn parse_base_node(s: &mut Scanner<'_>) -> Result<Option<SpannedKdlNode>, KdlErr
             break;
         }
 
-        // entry (argument or property)
-        // entry の開始 offset は slashdash 判定の後かつ型注釈の前で取得する。
         let entry_start = s.byte_offset();
         if let Some(entry) = try_parse_entry(s)? {
             let entry_end = s.byte_offset();
@@ -355,7 +315,6 @@ fn parse_base_node(s: &mut Scanner<'_>) -> Result<Option<SpannedKdlNode>, KdlErr
     )))
 }
 
-/// `/-` を entry/children 用に試みる。
 fn try_consume_entry_slashdash(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     if s.peek() != Some('/') {
         return Ok(false);
@@ -364,9 +323,9 @@ fn try_consume_entry_slashdash(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     s.advance();
     if s.peek() == Some('-') {
         s.advance();
-        // slashdash の後に line-space*
+
         skip_line_space(s)?;
-        // slashdash の後に }, ;, EOF が来たらエラー
+
         match s.peek() {
             Some('}') => return Err(s.make_error(KdlErrorKind::InvalidSlashdash)),
             Some(';') => return Err(s.make_error(KdlErrorKind::InvalidSlashdash)),
@@ -380,7 +339,6 @@ fn try_consume_entry_slashdash(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     }
 }
 
-/// slashdash された children block を試みる: `/-` line-space* `{` nodes `}`
 fn try_consume_slashdash_children(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     if s.peek() != Some('/') {
         return Ok(false);
@@ -404,12 +362,11 @@ fn try_consume_slashdash_children(s: &mut Scanner<'_>) -> Result<bool, KdlError>
     Ok(true)
 }
 
-/// type annotation: `(` node-space* string node-space* `)`
 fn try_parse_type_annotation(s: &mut Scanner<'_>) -> Result<Option<String>, KdlError> {
     if s.peek() != Some('(') {
         return Ok(None);
     }
-    s.advance(); // '('
+    s.advance();
     skip_node_space(s)?;
     let ty = parse_string(s)?;
     skip_node_space(s)?;
@@ -417,20 +374,16 @@ fn try_parse_type_annotation(s: &mut Scanner<'_>) -> Result<Option<String>, KdlE
     Ok(Some(ty))
 }
 
-/// entry をパースする: prop | value
 fn try_parse_entry(s: &mut Scanner<'_>) -> Result<Option<KdlEntry>, KdlError> {
-    // まず type annotation をチェック
     let ty = try_parse_type_annotation(s)?;
 
     if ty.is_some() {
         skip_node_space_optional(s)?;
 
-        // type annotation の後に slashdash は不可
         if s.peek() == Some('/') && s.peek_next() == Some('-') {
             return Err(s.make_error(KdlErrorKind::InvalidSlashdash));
         }
 
-        // type annotation の後に値が必要。terminator/}/EOF/newline なら不正
         match s.peek() {
             None | Some(';') | Some('}') => {
                 return Err(s.make_error(KdlErrorKind::UnexpectedChar(s.peek().unwrap_or(' '))));
@@ -439,23 +392,16 @@ fn try_parse_entry(s: &mut Scanner<'_>) -> Result<Option<KdlEntry>, KdlError> {
                 return Err(s.make_error(KdlErrorKind::UnexpectedChar(ch)));
             }
             Some('/') if s.peek_next() == Some('/') => {
-                // single-line comment = terminator
                 return Err(s.make_error(KdlErrorKind::UnexpectedChar('/')));
             }
             _ => {}
         }
-
-        // type annotation の後に `=` が来たら type_before_prop_key_fail
-        // → property key に type annotation はつけられない
-        // ここでは string をパースした後に `=` チェックで対応
     }
 
-    // `#` で始まる場合: raw string / keyword-number / keyword
     if s.peek() == Some('#') {
-        // raw string を先に試す
         if let Some(r) = parse_raw_string(s)? {
             let str_val = KdlValue::String(r);
-            // raw string は property key にもなれる: `=` チェック
+
             let saved_after = s.save();
             skip_ws(s)?;
             if s.peek() == Some('=') {
@@ -482,21 +428,20 @@ fn try_parse_entry(s: &mut Scanner<'_>) -> Result<Option<KdlEntry>, KdlError> {
             s.restore(saved_after);
             return Ok(Some(KdlEntry::Argument { ty, value: str_val }));
         }
-        // keyword-number (#inf, #-inf, #nan)
+
         if let Some(kn) = parse_keyword_number(s)? {
             return Ok(Some(KdlEntry::Argument {
                 ty,
                 value: KdlValue::Number(kn),
             }));
         }
-        // keyword (#true, #false, #null)
+
         if let Some(kw) = try_parse_keyword(s)? {
             return Ok(Some(KdlEntry::Argument { ty, value: kw }));
         }
         return Ok(None);
     }
 
-    // number を試す
     if let Some(num) = parse_number(s)? {
         return Ok(Some(KdlEntry::Argument {
             ty,
@@ -504,24 +449,21 @@ fn try_parse_entry(s: &mut Scanner<'_>) -> Result<Option<KdlEntry>, KdlError> {
         }));
     }
 
-    // string を試す (quoted, identifier)
     if let Some(str_val) = try_parse_string_value(s)? {
-        // `=` が来たら property
         let saved_after = s.save();
         skip_ws(s)?;
         if s.peek() == Some('=') {
-            // type annotation が entry に付いている場合、property key には付けられない
             if ty.is_some() {
                 return Err(s.make_error(KdlErrorKind::UnexpectedChar('=')));
             }
-            s.advance(); // '='
+            s.advance();
             skip_ws(s)?;
-            // property: key = value
+
             let key = match str_val {
                 KdlValue::String(k) => k,
                 _ => unreachable!(),
             };
-            // value の type annotation
+
             let val_ty = try_parse_type_annotation(s)?;
             if val_ty.is_some() {
                 skip_node_space_optional(s)?;
@@ -535,14 +477,12 @@ fn try_parse_entry(s: &mut Scanner<'_>) -> Result<Option<KdlEntry>, KdlError> {
         }
         s.restore(saved_after);
 
-        // argument
         return Ok(Some(KdlEntry::Argument { ty, value: str_val }));
     }
 
     Ok(None)
 }
 
-/// 文字列を KdlValue::String として試す。
 fn try_parse_string_value(s: &mut Scanner<'_>) -> Result<Option<KdlValue>, KdlError> {
     if let Some(q) = parse_quoted_string(s)? {
         return Ok(Some(KdlValue::String(q)));
@@ -556,42 +496,38 @@ fn try_parse_string_value(s: &mut Scanner<'_>) -> Result<Option<KdlValue>, KdlEr
     Ok(None)
 }
 
-/// value: string | number | keyword
 fn parse_value(s: &mut Scanner<'_>) -> Result<KdlValue, KdlError> {
-    // keyword-number
     if let Some(kn) = parse_keyword_number(s)? {
         return Ok(KdlValue::Number(kn));
     }
-    // keyword
+
     if let Some(kw) = try_parse_keyword(s)? {
         return Ok(kw);
     }
-    // number
+
     if let Some(num) = parse_number(s)? {
         return Ok(KdlValue::Number(num));
     }
-    // string
+
     let str_val = parse_string(s)?;
     Ok(KdlValue::String(str_val))
 }
 
-/// keyword: #true | #false | #null
 fn try_parse_keyword(s: &mut Scanner<'_>) -> Result<Option<KdlValue>, KdlError> {
     if s.peek() != Some('#') {
         return Ok(None);
     }
     let saved = s.save();
-    s.advance(); // '#'
+    s.advance();
 
-    // #true
     if try_consume_literal(s, "true") {
         return Ok(Some(KdlValue::Bool(true)));
     }
-    // #false
+
     if try_consume_literal(s, "false") {
         return Ok(Some(KdlValue::Bool(false)));
     }
-    // #null
+
     if try_consume_literal(s, "null") {
         return Ok(Some(KdlValue::Null));
     }
@@ -600,7 +536,6 @@ fn try_parse_keyword(s: &mut Scanner<'_>) -> Result<Option<KdlValue>, KdlError> 
     Ok(None)
 }
 
-/// リテラル文字列を消費する。マッチしたら true。
 fn try_consume_literal(s: &mut Scanner<'_>, literal: &str) -> bool {
     let saved = s.save();
     for expected in literal.chars() {
@@ -617,12 +552,10 @@ fn try_consume_literal(s: &mut Scanner<'_>, literal: &str) -> bool {
     true
 }
 
-/// node-space を可能な限りスキップする。何か消費したら true。
 fn skip_node_space_optional(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     skip_node_space(s)
 }
 
-/// 文字列が利用可能な場合にパースする。
 fn parse_string_if_available(s: &mut Scanner<'_>) -> Result<Option<String>, KdlError> {
     if let Some(q) = parse_quoted_string(s)? {
         return Ok(Some(q));

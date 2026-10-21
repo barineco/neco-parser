@@ -1,21 +1,23 @@
 # neco-kdl-ast 構文リファレンス
 
-KDL を構造化 IR の入れ物として使う際の表記規律と、 各規律の worked example を示す。
+[English](syntax-en.md)
+
+KDL を構造化 IR の入れ物として使う際の表記規律と、各規律の具体例を示す。
 
 ## 用語
 
 | 用語 | 定義 |
 |---|---|
-| segment | NsidPath を構成する単位、 1 つの非空文字列 |
-| NsidPath | 0+ 個の segment の有限列、 string 表現は segment を `.` で連結 |
-| fragment | CrossRef 内で `#` の右に置かれる単一 identifier |
-| form X | KDL node 表現で `<kind keyword> "<identifier>"` 形 ( `lex "i64.add"` 等 ) |
-| form Y | KDL node 表現で node 名そのものに NsidPath を埋め込む形 ( `i64.add { ... }` 等 ) |
-| layout mode | FS path と NsidPath の対応の strictness、 strict 1:1 / bundle / cratis dir の 3 mode |
+| segment | NsidPath を構成する単位、1 つの非空文字列 |
+| NsidPath | 0 個以上の segment の有限列、string 表現は segment を `.` で連結 |
+| fragment | CrossRef 内で `#` の右に置かれる単一の識別子 |
+| form X | KDL ノード 表現で `<kind keyword> "<identifier>"` 形 ( `item "i64.add"` 等 ) |
+| form Y | ノード名自体に NsidPath を埋め込む KDL 表現 |
+| layout mode | FS パス との対応の厳密さ ( strict・bundle・cratis dir の 3 種 ) |
 
 ## NsidPath
 
-NsidPath は 0+ 個の segment の有限列。 各 segment は **空でない**文字列、 `.` と `#` を含まない。
+NsidPath は 0 個以上の segment の有限列。各 segment は **空でない**文字列、`.` と `#` を含まない。
 
 ### 表記
 
@@ -40,26 +42,26 @@ NsidPath::parse("a.b.c").display()  // → "a.b.c" ( 往復 )
 
 任意の well-formed `s` で `NsidPath::parse(s).display() == s`。
 
-### FS path との対応
+### FS パス との対応
 
-n segment NsidPath は FS path materialization で **同 n の path component 深度** を持つ:
+n segment NsidPath は FS パス へ変換すると、同じ n の深さを持つ:
 
 ```
 NsidPath::parse("app.bsky.actor.getProfile").to_fs_path("json")
 // → PathBuf "app/bsky/actor/getProfile.json"   ( 3 dir + 1 leaf = 4 path component )
 
 NsidPath::from_fs_path(
-    Path::new("axiom/encoding/base64.lex"),
+    Path::new("axiom/encoding/base64.kdl"),
     Path::new("axiom/")
 )
-// → Some(NsidPath ["encoding", "base64"])      ( ext "lex" を strip、 dir + file stem を join )
+// → Some(NsidPath ["encoding", "base64"])      ( ext "kdl" を strip、 dir + file stem を join )
 ```
 
-base 配下から外れる path、 segment が `.` / `#` を含むような違反 path は `None`。
+base の外に出る パス、またはドット・ハッシュを含む segment は `None` を返す。
 
 ## CrossRef
 
-別 entity への参照を表す。 表記は `<NsidPath>#<fragment>` 形、 `#` を **高々 1 個** 含む、 fragment は flat identifier ( `.` も `#` も含まない、 空でない )。
+別の対象 への参照を表す。`#` を高々 1 個含み、fragment は flat な 識別子 である。
 
 ### 3 形式
 
@@ -78,12 +80,12 @@ base 配下から外れる path、 segment が `.` / `#` を含むような違�
 | `DotInFragment` | `"a.b.c#x.y"` ( fragment に . が混入 ) |
 | `EmptySegment` | `"a..b"` ( 連続 . で空 segment 発生 ) |
 
-### worked example
+### 具体例
 
 ```
-laplan の chain step
-  step "str.find" input="h,n" output="idx"
-  → CrossRef::parse("str.find") = path:[str,find], fragment:None
+path のみの参照
+  ref "pkg.module.func"
+  → CrossRef::parse("pkg.module.func") = path:[pkg,module,func], fragment:None
 
 atproto Lexicon の output ref
   output "app.bsky.actor.defs#profileViewDetailed" encoding="application/json"
@@ -93,27 +95,23 @@ atproto Lexicon の output ref
 atproto union 内の local ref
   refs ["#main" "#profileView"]
   → CrossRef::parse("#main") = path:[], fragment:Some("main"), is_local=true
-
-neployer の app dependency
-  requires { app "kitty" }
-  → CrossRef::parse("kitty") = path:[kitty], fragment:None
 ```
 
 ## NsidPath を表現する 4 form
 
-n segment NsidPath は KDL / FS で 4 通りの表現を持つ。 各 form の階層深度は同 n。
+n segment NsidPath は KDL / FS で 4 通りの表現を持つ。各 form の階層深度は同 n。
 
 ### 例: `app.bsky.actor.getProfile` ( 4 segment )
 
-#### flat KDL form X ( kind keyword + quoted identifier )
+#### 平坦 KDL form X ( kind keyword ＋ 引用符付き識別子 )
 
 ```kdl
-lex "app.bsky.actor.getProfile" {
+item "app.bsky.actor.getProfile" {
     procedure { ... }
 }
 ```
 
-#### flat KDL form Y ( node 名に NsidPath 埋め込み )
+#### 平坦 KDL form Y ( ノード名に NsidPath を埋め込む )
 
 ```kdl
 app.bsky.actor.getProfile {
@@ -135,7 +133,7 @@ app {
 }
 ```
 
-#### FS materialization ( strict 1:1 mode、 3 dir + 1 leaf file )
+#### FS materialization ( strict 1:1 mode、3 dir + 1 leaf file )
 
 ```
 <base>/app/bsky/actor/getProfile.<ext>
@@ -143,34 +141,37 @@ app {
 
 ### 例: `encoding.base64` ( 2 segment ) を bundle で
 
-`axiom/encoding/base64.lex` は 2 dir + 1 file path component で `encoding.base64` を表す。 file 内には複数 entity があり、 各 entity の identifier は file path を strict prefix として持つ:
+`axiom/encoding/base64.kdl` は、`encoding.base64` を表す 2 dir + 1 file の パス である。
+この file には複数の対象がある。
+各対象の 識別子は、この パス を prefix として持つ。
 
 ```kdl
-// file: axiom/encoding/base64.lex
-lex encoding.base64.encode {
+// file: axiom/encoding/base64.kdl
+item encoding.base64.encode {
     procedure { ... }
 }
-lex encoding.base64.decode {
+item encoding.base64.decode {
     procedure { ... }
 }
 ```
 
-各 entity の identifier `encoding.base64.{encode,decode}` は file path から導出される `encoding.base64` を strict prefix に持つ。
+各対象の 識別子の prefix は、この パス から導出される。
 
-## FS path との対応 ( layout mode 3 種 )
+## FS パス との対応 ( layout mode 3 種 )
 
 ### universal mapping
 
-base 配下 FS path `<base>/s₁/s₂/.../sₙ.<ext>` から導出される NsidPath:
+base 配下 FS パス `<base>/s₁/s₂/.../sₙ.<ext>` から導出される NsidPath:
 
 ```
-NsidPath::from_fs_path("axiom/encoding/base64.lex", base="axiom/")
-  → Some(["encoding", "base64"])    // ext .lex を strip、 dir + file stem を join
+NsidPath::from_fs_path("axiom/encoding/base64.kdl", base="axiom/")
+  → Some(["encoding", "base64"])    // ext .kdl を strip、 dir + file stem を join
 ```
 
 ### strict 1:1 mode ( atproto 流 )
 
-file 内 **top entity 1 個** の identifier が FS path から導出される NsidPath と **equal**:
+file の最上位 対象 は、識別子 が特定の NsidPath と等しい。
+この NsidPath は FS パス から導出される:
 
 ```
 file: app/bsky/actor/getProfile.json    ( base = "app/" )
@@ -188,17 +189,17 @@ top entity identifier == "different.path"
 → LayoutViolation { kind: StrictMismatch, ... }
 ```
 
-### bundle mode ( laplan 流 )
+### bundle mode
 
-file 内 **複数 entity** の identifier が FS path から導出される NsidPath を **strict prefix** に持つ:
+file 内 **複数の対象** の 識別子 が FS パス から導出される NsidPath を **strict prefix** に持つ:
 
 ```
-file: axiom/encoding/base64.lex    ( base = "axiom/" )
+file: axiom/encoding/base64.kdl    ( base = "axiom/" )
 FS-derived NsidPath: [encoding, base64]
 file 内 entity:
-  lex "encoding.base64.encode"     identifier=[encoding,base64,encode]    starts_with [encoding,base64] OK
-  lex "encoding.base64.decode"     identifier=[encoding,base64,decode]    starts_with [encoding,base64] OK
-  lex "encoding.base64.decode_url" identifier=[encoding,base64,decode_url] starts_with [encoding,base64] OK
+  item "encoding.base64.encode"     identifier=[encoding,base64,encode]    starts_with [encoding,base64] OK
+  item "encoding.base64.decode"     identifier=[encoding,base64,decode]    starts_with [encoding,base64] OK
+  item "encoding.base64.decode_url" identifier=[encoding,base64,decode_url] starts_with [encoding,base64] OK
 
 → verify_layout(Bundle, ...) pass
 ```
@@ -206,20 +207,22 @@ file 内 entity:
 違反例:
 
 ```
-file: axiom/encoding/base64.lex
+file: axiom/encoding/base64.kdl
 file 内 entity:
-  lex "i32.add"    ← identifier が prefix を持たない
+  item "i32.add"    ← identifier が prefix を持たない
 → LayoutViolation { kind: BundlePrefixMismatch, ... }
 ```
 
-### cratis dir mode ( neployer 流 )
+### cratis dir mode
 
-FS path との対応検査を適用しない。 entity identifier は file 内 first arg のみで決まり、 dir tree は categorization に閉じる:
+FS パス との対応検査を適用しない。
+対象の 識別子は first arg のみで決まる。
+dir tree は categorization に閉じる:
 
 ```
-file: apps/terminals/kitty/config.kdl
+file: items/group/widget/config.kdl
 file 内 entity:
-  app "kitty" { ... }    ← identifier = [kitty]、 dir tree から独立
+  item "widget" { ... }    ← identifier = [widget]、 dir tree から独立
 
 → verify_layout(CratisDir, ...) は常に 0 violation
 ```
@@ -228,21 +231,30 @@ file 内 entity:
 
 | kind | 意味 |
 |---|---|
-| `StrictMismatch` | strict mode で entity NSID ≠ FS path NSID |
-| `BundlePrefixMismatch` | bundle mode で entity NSID が FS path prefix を含まない |
-| `IllegalSegment` | segment が `.` / `#` を含む |
+| `StrictMismatch` | strict mode の不一致、下記参照 |
+| `BundlePrefixMismatch` | bundle mode の prefix 欠落、下記参照 |
+| `IllegalSegment` | segment がドットまたはハッシュを含む |
 | `PathOutsideBase` | file_path が base 配下にない |
-| `StrictMultipleEntities` | strict mode で top-level entity が 2 つ以上 |
+| `StrictMultipleEntities` | strict mode の 対象 複数、下記参照 |
 
-## resolve 経路
+`StrictMismatch` は strict mode で発生する。
+対象の 識別子 が、FS パス 由来の NsidPath と等しくない場合である。
 
-`Document::resolve(&CrossRef)` は CrossRef 3 形式を method receiver の **current document の内部** で:
+`BundlePrefixMismatch` は bundle mode で発生する。
+対象の識別子が、FS パス由来の識別子で始まり、かつそれより長いという strict prefix の条件を満たさない場合である。
+
+`StrictMultipleEntities` は strict mode で発生する。
+file 内の top-level 対象が 2 つ以上ある場合である。
+
+## 解決経路
+
+`Document::resolve` は CrossRef の 3 形式を、呼び出し先の document 内部で解決する:
 
 ```
 match (cross_ref.is_local(), cross_ref.fragment()) {
-    (true,  Some(frag)) => current document の identifier 索引で frag を引く ( local-only )
-    (false, None)       => corpus index で path を引く
-    (false, Some(frag)) => path で entity を引いた後、 fragment で内部 def を引く
+    (true,  Some(frag)) => 現在の document 内で、 最上位の identifier から frag を引く ( local-only )
+    (false, None)       => 現在の document 内で、 最上位の identifier から path を引く
+    (false, Some(frag)) => path で対象を引いた後、 その対象の内部で fragment を引く
 }
 ```
 
@@ -252,13 +264,13 @@ match (cross_ref.is_local(), cross_ref.fragment()) {
 // (1) path のみ
 let cr = CrossRef::parse("str.find").unwrap();
 doc.resolve(&cr)
-// → str.find entity ( "lex" / "morph" 等 ) を返す
+// → str.find entity を返す ( kind は呼び出し側の定義による )
 
 // (2) local-only fragment
 let cr = CrossRef::parse("#profileView").unwrap();
 doc.resolve(&cr)
 // → current document 内で identifier="profileView" な entity を返す
-//   ( atproto Lexicon の defs block 内の sub-definition 解決に使用 )
+//   ( 入れ子の定義には path#fragment の qualified 形が必要 )
 
 // (3) path + fragment
 let cr = CrossRef::parse("app.bsky.actor.defs#profileViewDetailed").unwrap();
@@ -268,25 +280,40 @@ doc.resolve(&cr)
 
 ## 包みの観点による 5 軸の同型表記
 
-KDL の論理構造は **「entity が別 entity を包む ( 包み )」** という単一の関係に還元できる。 syntax 上の様々な form ( property / type annotation / kind keyword 等 ) は、 この入れ子関係を読みやすさのために圧縮した表記。
+KDL の論理構造は、対象が別の対象 を包むという単一の関係に還元できる。
+property・type annotation・kind keyword 等の様々な syntax は、この入れ子関係を読みやすさのために圧縮した表記である。
 
-5 軸の同型表記が独立に成立し、 AST layer は 利用者 が宣言する **Convention** に応じて それぞれを 往復変換 として扱う。
+5 軸の同型表記が独立に成立し、AST layer は 利用者が宣言する **Convention** に応じて それぞれを 往復変換 として扱う。
 
 ### 5 軸 一覧
 
-| 軸 | 圧縮 form | nested form | 同型条件 |
-|---|---|---|---|
-| 1. namespace | `parent.child { body }` | `parent { child { body } }` | 中間 node に args / properties / siblings なし |
-| 2. procedure | `chain { call "a"; .call "b" }` | `chain { call "a" { call "b" } }` | dot prefix を解釈する kind を 利用者 が指定 |
-| 3. property-child | `node key=v` | `node { key v }` | child は arg 1 つのみ、 properties / children なし |
-| 4. type annotation | `node (T)val` | `node { <marker> T { val } }` | 利用者 が type marker を宣言 |
-| 5. kind keyword | `lex "foo" { body }` | `lex { <marker>foo { body } }` | 利用者 が identifier marker を宣言 |
+- 1. namespace
+  - 圧縮形: `parent.child { body }`
+  - nested 形: `parent { child { body } }`
+  - 条件: 中間ノード に args・properties・siblings がない
+- 2. procedure
+  - 圧縮形: `chain { call "a"; .call "b" }`
+  - nested 形: `chain { call "a" { call "b" } }`
+  - 条件: dot prefix を解釈する kind を利用者が指定する
+- 3. property-child
+  - 圧縮形: `node key=v`
+  - nested 形: `node { key v }`
+  - 条件: 子ノードは arg 1 つのみ、properties・子ノード がない
+- 4. type annotation
+  - 圧縮形: `node (T)val`
+  - nested 形: `node { <marker> T { val } }`
+  - 条件: 利用者が type marker を宣言する
+- 5. kind keyword
+  - 圧縮形: `item "foo" { body }`
+  - nested 形: `item { <marker>foo { body } }`
+  - 条件: 利用者が 識別子 marker を宣言する
 
-5 軸すべて **「parent が child を含む」 という同じ root principle の compression**。 同 entity で複数軸が同時に effective でもよい ( 軸は独立 )。
+5 軸すべて、parent が 子ノードを含む同じ root principle の圧縮である。
+同一の対象 で複数軸が同時に effective でもよい ( 軸は独立 )。
 
 ### Convention と Marker
 
-AST layer の 変換群は 利用者 が宣言する **Convention** を取る。 Convention は 利用者 領域の予約識別子 ( **Marker** ) のリストを保持する。
+AST layer の 変換群は 利用者が宣言する **Convention** を取る。Convention は 利用者 領域の予約識別子 ( **Marker** ) のリストを保持する。
 
 ```rust
 pub struct Convention {
@@ -308,22 +335,23 @@ pub enum Marker {
 
 軸 ごとの正規形宣言は § Convention の正規形宣言 を参照。
 
-Marker は **modifier** ( 1 階下の child を 単一の意味単位として包む wrapper ) を表す。 例:
+Marker は **modifier** ( 1 階下の 子ノードを 単一の意味単位として包むラッパー ) を表す。例:
 
-- type annotation marker: `:type` ( prefix `:` で type 名を marking )
-- identifier marker: `@id` ( prefix `@` で identifier を marking )
-- 利用者-defined wrapper: `:app` ( wrap entity body )
+- 型注釈 marker: prefix で型名を示す ( 例: `:type` )
+- 識別子 marker ( 例: `@id` ): 識別子を示す
+- 利用者定義の wrapper ( 例: `:app` ): 対象の body を包む
 
-modifier は generalized form で `expr.chain` / `expr.call` のような既存 wrapper kind と同型構造 ( 1 階下を意味単位として包む )。 AST layer は marker を **「ここから 1 階下は単一の意味単位」 と declare する境界**として扱う。
+modifier は一般化した form であり、`expr.chain` や `expr.call` と同型の構造を持つ ( 1 階下を意味単位として包む )。
+AST layer は marker を、直下の 1 階が単一の意味単位であると示す境界として扱う。
 
 ### α semantics: marker は modifier として 1 階の境界を作る
 
-Convention に登録された marker 配下の **直下 child の name 展開を skip** する ( 孫以降は 通常処理 )。
+Convention に登録された marker 配下では、**直下 子ノードの名前展開を省略**する ( 孫以降は 通常処理 )。
 
 ```mermaid
 graph TD
     M[":app ( marker )"]
-    I["com.vscodium.codium-insiders<br/>identifier、 直下、 preserve"]
+    I["com.example.myapp<br/>identifier、 直下、 preserve"]
     G1["target 'config.fish'<br/>孫、 通常処理"]
     G2["sub.namespace<br/>孫、 dotted なら expand"]
     M -- "α boundary<br/>名前展開省略" --> I
@@ -333,7 +361,7 @@ graph TD
 
 ```kdl
 :app {
-    com.vscodium.codium-insiders {     ← :app 直下、 nest で展開しない ( 単一 entity identifier )
+    com.example.myapp {     ← :app 直下、 nest で展開しない ( 単一 entity identifier )
         target "config.fish" { ... }   ← 孫、 通常処理 ( target は dotted ではないので影響なし )
         sub.namespace { body }         ← 孫、 dotted 単一子 chain なら nest で展開される
     }
@@ -343,11 +371,13 @@ graph TD
 α を採用する理由:
 - marker form は内部表現 ( 出力 form として通常使わない )
 - modifier の内側は 通常の構造として扱う設計が自然
-- subtree 全体 preserve は 利用者 が深層に marker を入れ子状に置く形で対応可能
+- subtree ( 部分木 ) 全体を保持したい場合は、利用者が深層に marker を入れ子状に置けば対応できる
 
 ### 軸 1: namespace ( dot collapse )
 
-連続する単一子 namespace block は 1 つの dotted node 名に collapse できる。 nested form と flat dot form は意味論的同型。
+連続する単一子の namespace block は collapse が可能である。
+1 つの dotted ノード名へまとめられる。
+nested form と flat-dot form は意味論的同型である。
 
 #### 適用可能な例 ( pure namespace chain )
 
@@ -371,41 +401,45 @@ encoding.base64.encode {
 }
 ```
 
-両 form は同一 NsidPath `[encoding, base64, encode]` を表す。 `Document::flatten(&conv)` / `Document::nest(&conv)` で 往復 可能。
+両 form は同一 NsidPath を表す ( 例: `[encoding, base64, encode]` )。
+`Document::flatten` と `Document::nest` で往復可能。
 
-#### 適用不可の例 ( flatten は NoOp + reason )
+#### 部分的に畳み込めない例
 
-中間 node に **args / properties / siblings** のいずれかがあると collapse できない ( 情報損失が起きる )。
+中間ノード に **args / properties / siblings** のいずれかがあると、その箇所の collapse だけが妨げられる ( 情報損失を避けるため )。対象となる他の箇所は変換されうる。
 
 ```kdl
-// 中間 node に args あり → NoOp
+// The parent has an argument and stays uncollapsed.
 a "intermediate-arg" {
     b {
         c { ... }
     }
 }
 
-// 中間 node に siblings あり → NoOp
+// The parent has multiple children and stays uncollapsed.
 a {
     b { ... }
     other { ... }    ← b と並ぶ sibling のため flatten 不可
 }
 
-// 中間 node に property あり → NoOp
+// The parent has a property and stays uncollapsed.
 a key="value" {
     b { ... }
 }
 ```
 
-`flatten()` は条件外 node を見ると `TransformOutcome::NoOp { reason: "..." }` を返し、 何も変えずに Document をそのまま返す。
+`flatten()` は、一部でも畳み込みができた場合、適用後の Document と `Applied` を返す。
+どの部分も畳み込めなかった場合に限り、reason 付きの `NoOp` を返し、Document は変更せずそのまま返す。
 
 #### marker boundary
 
-`nest(&conv)` は conv の marker 配下では α semantics で immediate child の 名前展開を省略する ( 直前 § 参照 )。
+`nest` は marker 配下の 直下の子ノード で名前展開を省略する。
+この挙動を α semantics と呼ぶ ( 直前 § 参照 )。
 
 ### 軸 2: procedure ( dot prefix )
 
-連続した手続きを表す chain / step / pipeline 配下では、 node 名 leading dot 個数 = chain 内 depth で表現する。 dot prefix なしの sibling は同 depth siblings の literal 解釈 ( 手続き pipeline 解釈は適用しない )。
+連続した手続きを表す chain・step・pipeline 配下では、ノード名の leading dot 個数が、chain 内の深さを表す。
+dot のない sibling は、同じ深さの要素としてそのまま解釈する ( pipeline としては扱わない )。
 
 #### depth 規律
 
@@ -433,11 +467,13 @@ chain {
 }
 ```
 
-`Document::expand_dot_chain("call", &conv)` で dot-prefix → deep-nested、 `Document::collapse_dot_chain("call", &conv)` で逆変換、 往復 可能。
+`expand_dot_chain` で dot-prefix から deep-nested へ変換する。
+`collapse_dot_chain` で逆変換し、往復可能。
 
 #### kind 単位の指定
 
-`expand_dot_chain` / `collapse_dot_chain` は `kind` 引数で対象 kind を指定。 AST layer は構文解釈 primitive のみ提供、 「どの kind 配下で dot prefix 解釈するか」 は 利用者 が宣言する。
+`expand_dot_chain` と `collapse_dot_chain` は、kind 引数で対象を指定する。
+AST layer は構文解釈の基本機能のみ提供し、どの kind で解釈するかは利用者が宣言する。
 
 ```rust
 doc.expand_dot_chain("call", &conv);   // call を入れ子 chain として解釈
@@ -474,7 +510,7 @@ chain {
 }
 ```
 
-dot prefix の有無で「入れ子内側か / 同 depth sibling か」 が syntactic に決定する。 convention 依存が消える。
+dot の有無で、入れ子か同じ深さの sibling かが syntactic に決まる ( convention 非依存 )。
 
 #### branching の表現
 
@@ -511,11 +547,12 @@ chain {
 }
 ```
 
-`expand_dot_chain` は `TransformOutcome::NoOp { reason: "depth jump from 0 to 2" }` を返す。
+`expand_dot_chain` は深さの jump を reason として記録した `NoOp` を返す。
 
 ### 軸 3: property-child
 
-property `key=value` は同名 child node `key value` ( positional arg 1 つのみ、 properties と children を持たない ) と意味論的同型。
+property `key=value` は、同名の 子ノード `key value` と意味論的同型である。
+ただし 子ノードは arg を 1 つだけ持ち、properties と 子ノードを持たない。
 
 ```kdl
 some.node "name" value="something" is=#false count=3 { body }
@@ -532,9 +569,13 @@ some.node "name" {
 }
 ```
 
-両 form で `attribute_str("value")` は `Some("something")`、 `attribute_bool("is")` は `Some(false)`、 `attribute_int("count")` は `Some(3)` を返す。
+両 form で、各 accessor は同じ値を返す。
+`attribute_str` は `Some("something")` を返す。
+`attribute_bool` は `Some(false)` を返す。
+`attribute_int` は `Some(3)` を返す。
 
-property の値に type annotation がある場合、 child form でも同じ位置に保たれる:
+property の値に type annotation がある場合も、同じ位置に保たれる。
+子ノード形でも位置は変わらない。
 
 ```kdl
 some.node value=(i32)42       ← property、 値の型 i32
@@ -546,18 +587,20 @@ some.node value=(i32)42       ← property、 値の型 i32
 some.node { value (i32)42 }   ← child、 first arg の型 i32
 ```
 
-`Document::expand_properties(&conv)` / `Document::collapse_properties(&conv)` で 往復 可能。 child → property の collapse は次の条件を満たす child のみ可能:
+`Document::expand_properties` と `Document::collapse_properties` で往復可能。
+子ノード から property への collapse は、次の条件を満たす 子ノード だけに可能:
 - positional arg を ちょうど 1 つ持つ
 - properties を持たない
-- children を持たない
+- 子ノードを持たない
 
-複数 arg を持つ child ( `coord 1 2 3` 等 ) や children を持つ child は 単独 property に collapse できない ( 情報損失が起きる )。
+複数の arg を持つ 子ノードは、単独 property への collapse が不可能である。
 
 ### 軸 4: type annotation
 
-type annotation `(T)V` は 利用者 宣言の marker に応じて、 marker が type 名を wrap する form と 往復 する。
+type annotation `(T)V` は、利用者が宣言する marker に応じて往復する。
+marker が type 名を wrap した form との間で変換される。
 
-利用者 が type marker を `Marker::Kind("_type")` で宣言した場合:
+利用者が type marker を `Marker::Kind("_type")` で宣言した場合:
 
 ```kdl
 input { (integer)value required=#true }
@@ -573,7 +616,7 @@ input {
 }
 ```
 
-`collapse_type_annotations(&Marker::Kind("_type".into()), &conv)` で逆変換、 元に戻る ( 往復 lossless )。
+`collapse_type_annotations(&Marker::Kind("_type".into()), &conv)` で逆変換、元に戻る ( 往復 lossless )。
 
 prefix 形 ( `Marker::Prefix(':')` ) でも同様:
 
@@ -591,20 +634,21 @@ input {
 }
 ```
 
-### 軸 5: kind keyword ( form X / form Y / nested form 統合 )
+### 軸 5: kind keyword ( form X・form Y・nested form の統合 )
 
-kind keyword `<kind> "<identifier>" <body>` は kind が identifier marker を介して child を包む form と等価。
+kind keyword は 子ノードを包む形である。
+これは 識別子 marker 経由の表現と等価である。
 
-利用者 が identifier marker を `Marker::Prefix('@')` で宣言した場合:
+利用者が 識別子 marker を `Marker::Prefix('@')` で宣言した場合:
 
 ```kdl
-lex "foo" { procedure { ... } }
+item "foo" { procedure { ... } }
 ```
 
 `expand_kind_keyword(&Marker::Prefix('@'), &conv)`:
 
 ```kdl
-lex {
+item {
     @foo {
         procedure { ... }
     }
@@ -614,20 +658,26 @@ lex {
 `collapse_kind_keyword(&Marker::Prefix('@'), &conv)` で逆変換。
 
 3 form の関係:
-- form X ( `<kind> "<id>" <body>` ) : first string arg に identifier
-- form Y ( `<id> <body>`、 kind 暗黙 ) : node 名に identifier
-- nested marker form ( `<kind> { <marker><id> <body> }` ) : 完全 nested、 marker で identifier 位置を明示
+- form X ( `<kind> "<id>" <body>` ): 最初の string 引数に 識別子
+- form Y ( `<id> <body>`、kind 暗黙 ) : ノード名に 識別子
+- marker 付き nested form ( `<kind> { <marker><id> <body> }` )
+  marker が 識別子 位置を明示する完全な形である。
 
-3 form は 利用者 convention を介して相互変換可能。 read-side accessor ( `structured_name()` / `_form_x()` / `_form_y()` ) は form X / Y を直接区別。
+3 form は、利用者 convention を介して相互変換可能である。
+read-side accessor は form X と form Y を直接区別する:
+
+- `structured_name`
+- `structured_name_form_x`
+- `structured_name_form_y`
 
 ### dot 区切りの 2 軸 ( syntactic position の区別 )
 
-軸 1 ( namespace ) と 軸 2 ( procedure ) はいずれも `.` を使うが、 **位置で区別** される:
+軸 1 ( namespace ) と 軸 2 ( procedure ) はいずれも `.` を使うが、**位置で区別** される:
 
 | 軸 | dot の位置 | 意味 |
 |---|---|---|
-| 軸 1 namespace dot collapse | node 名 **internal** ( `a.b.c` の途中 ) | 名前空間パス segment separator |
-| 軸 2 procedure dot prefix | node 名 **leading** ( `.call` / `..call` の先頭 ) | 入れ子 depth 表記 |
+| 軸 1 ( namespace ) | ノード名の途中 ( 例: `a.b.c` ) | 名前空間の区切り |
+| 軸 2 ( procedure ) | ノード名の先頭 ( 例: `.call` ) | 入れ子の深さ表記 |
 
 混在例:
 
@@ -642,36 +692,41 @@ AST layer は 2 軸を独立に解釈する。
 
 ### 値層での展開停止
 
-軸 4 / 軸 5 の nested 展開は、 葉の値が **KDL の bare identifier として有効な場合のみ** literal に valid:
-- `(i32)val` ↔ `<marker> i32 { val }` は valid ( i32 と val はいずれも bare identifier )
-- `(i32)42` ↔ `<marker> i32 { 42 }` は invalid ( 42 は bare identifier ではない、 KDL 仕様で数値リテラルは識別子として禁止 )
+軸 4・軸 5 の nested 展開は、葉の値が KDL の bare 識別子 として有効な場合のみ成立する:
+- `(i32)val` ↔ `<marker> i32 { val }`
+  両方とも bare な 識別子のため valid である。
+- `(i32)42` ↔ `<marker> i32 { 42 }`
+  42 は bare 識別子 ではなく、KDL 仕様で数値リテラルは識別子として使えないため invalid である。
 
-実用上の代替: `(i32)42` の 完全展開は `<marker> i32 42` ( marker 付き i32 node の first arg として 42 ) で止まる。 値は arg 位置に留まり、 これ以上の入れ子は不可能。
+実用上の代替: `(i32)42` の完全展開は `<marker> i32 42` で止まる。
+42 は marker 付き i32 ノード の first-arg として留まり、値はこれ以上入れ子にならない。
 
-### worked example: reverse-domain identifier の保持
+### 具体例: reverse-domain 識別子の保持
 
-実 use case として、 vscode 系の reverse-domain identifier ( `com.vscodium.codium-insiders` 等 ) を含む app 宣言を 往復 する例。 identifier に dot を含むため、 軸 1 namespace 展開を marker で保護する必要がある。
+reverse-domain 識別子を含む app 宣言を往復する例を示す ( 例: `com.example.myapp` )。
+識別子 に dot を含むため、軸 1 の namespace 展開を marker で保護する必要がある。
 
 original ( type annotation 形 `(app)<id>` ):
 
 ```kdl
-(app)com.vscodium.codium-insiders {
-    bindings { self flatpak="com.vscodium.codium-insiders" }
+(app)com.example.myapp {
+    bindings { self flatpak="com.example.myapp" }
     target "config.fish" {
         writer "verbatim"
-        path "/home/aoi/.var/app/com.vscodium.codium-insiders/config/fish/config.fish"
+        path "/home/user/.config/myapp/config.toml"
     }
 }
 ```
 
-step 1. 利用者 convention 設定:
+手順 1. 利用者 convention 設定:
 
 ```rust
 let app_marker = Marker::Prefix(':');
 let conv = Convention::new().with_marker(app_marker.clone());
 ```
 
-step 2. 軸 4 expand ( type annotation `(app)` を `:app` marker form へ ):
+手順 2. 軸 4 expand: 型注釈を marker form へ変換する。
+`(app)` が `:app` になる
 
 ```rust
 let (doc, _) = doc.expand_type_annotations(&app_marker, &conv);
@@ -681,17 +736,20 @@ let (doc, _) = doc.expand_type_annotations(&app_marker, &conv);
 
 ```kdl
 :app {
-    com.vscodium.codium-insiders {
-        bindings { self flatpak="com.vscodium.codium-insiders" }
+    com.example.myapp {
+        bindings { self flatpak="com.example.myapp" }
         target "config.fish" {
             writer "verbatim"
-            path "/home/aoi/.var/app/com.vscodium.codium-insiders/config/fish/config.fish"
+            path "/home/user/.config/myapp/config.toml"
         }
     }
 }
 ```
 
-step 3. 軸 1 nest ( namespace 展開 ): `:app` は conv の marker、 直下 `com.vscodium.codium-insiders` は α semantics で preserve、 孫以下は 通常処理 ( dotted node 名がないため変化なし ):
+手順 3. 軸 1 nest ( namespace 展開 ):
+`:app` は conv の marker である。
+直下の `com.example.myapp` は α semantics により保持される。
+孫以下は通常処理するが、dotted ノード名がないため変化しない。
 
 ```rust
 let (doc, _) = doc.nest(&conv);
@@ -699,7 +757,7 @@ let (doc, _) = doc.nest(&conv);
 
 結果は不変 ( marker boundary が機能 )。
 
-step 4. 逆変換 ( marker form → 元の type annotation 形 ):
+手順 4. 逆変換 ( marker form から元の type annotation 形へ ):
 
 ```rust
 let (doc, _) = doc.collapse_type_annotations(&app_marker, &conv);
@@ -707,12 +765,12 @@ let (doc, _) = doc.collapse_type_annotations(&app_marker, &conv);
 
 結果は元の入力と一致 ( 往復 lossless )。
 
-### 全 5 軸を適用した worked example ( lex )
+### 軸 1・3・4・5 を適用した具体例 ( item )
 
-original ( 圧縮 form 、 軸 1 / 3 / 4 / 5 が同時に圧縮されている ):
+original ( 圧縮 form 、軸 1 / 3 / 4 / 5 が同時に圧縮されている ):
 
 ```kdl
-lex text.string.from_int version=1 {
+item text.string.from_int version=1 {
     procedure {
         input {
             (integer)value required=#true
@@ -724,95 +782,105 @@ lex text.string.from_int version=1 {
 }
 ```
 
-step 1. 軸 3 expand ( property `version=1` → child ):
+手順 1. 軸 3 expand ( `version=1` 等の property を子ノードへ変換 ):
 
 ```kdl
-lex text.string.from_int {
+item "text.string.from_int" {
+    procedure {
+        input {
+            (integer)value {
+                required #true
+            }
+        }
+        output {
+            (string)result {
+                required #true
+            }
+        }
+    }
     version 1
-    procedure {
-        input {
-            (integer)value required=#true
-        }
-        output {
-            (string)result required=#true
-        }
-    }
 }
 ```
 
-step 2. 軸 5 expand ( kind keyword `lex` を identifier marker `@` で wrap、 利用者 convention `Marker::Prefix('@')` を使用 ):
+手順 2. 軸 5 expand: `item` を 識別子 marker `@` で包む。
+利用者 convention に `Marker::Prefix('@')` を使用:
 
 ```kdl
-lex {
+item {
     @text.string.from_int {
-        version 1
         procedure {
             input {
-                (integer)value required=#true
+                (integer)value {
+                    required #true
+                }
             }
             output {
-                (string)result required=#true
+                (string)result {
+                    required #true
+                }
             }
         }
+        version 1
     }
 }
 ```
 
-step 3. 軸 1 nest ( `@text.string.from_int` は marker、 α semantics で直下 preserve するが、 ここでは `@text.string.from_int` 自体が marker prefix 付き node なので 内部 namespace 展開は別途 利用者 判断、 ここでは normal 展開する ):
+手順 3. 軸 1 nest:
+`@text.string.from_int` 自体が marker 付き ノード であるため、α semantics により直下の子ノードは preserve の対象になる。
+登録された @ marker 自体と、その直下の名前が保護されるため、識別子は平坦なまま残り、この例の nest は NoOp になる。
 
 ```kdl
-lex {
-    @text {
-        string {
-            from_int {
-                version 1
-                procedure {
-                    input {
-                        (integer)value required=#true
+item {
+    @text.string.from_int {
+        procedure {
+            input {
+                (integer)value {
+                    required #true
+                }
+            }
+            output {
+                (string)result {
+                    required #true
+                }
+            }
+        }
+        version 1
+    }
+}
+```
+
+手順 4. 軸 4 expand: integer と string の型注釈を `:` marker で包む。
+手順 1 で展開済みの `required #true` 子ノードはそのまま保たれる:
+
+```kdl
+item {
+    @text.string.from_int {
+        procedure {
+            input {
+                :integer {
+                    value {
+                        required #true
                     }
-                    output {
-                        (string)result required=#true
+                }
+            }
+            output {
+                :string {
+                    result {
+                        required #true
                     }
                 }
             }
         }
+        version 1
     }
 }
 ```
 
-step 4. 軸 4 expand ( type annotation `(integer)` / `(string)` を type marker `:` で wrap ) + 軸 3 expand ( property `required=#true` を child に ):
+この例では、軸 1 の nest が NoOp のため `@text.string.from_int` は平坦なまま残り、型注釈は marker 付きの入れ子として表現される。
+ergonomic ではないが、複数の軸が独立に働く様子と、値層の扱いを同時に確認できる点で明確である。
+値層 ( 数値・bool・null ) は arg 位置に留まり、これ以上展開しない ( 例: `version 1` の `1` )。
 
-```kdl
-lex {
-    @text {
-        string {
-            from_int {
-                version 1
-                procedure {
-                    input {
-                        :integer {
-                            value {
-                                required #true
-                            }
-                        }
-                    }
-                    output {
-                        :string {
-                            result {
-                                required #true
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-```
-
-最深 nested form では entity がすべて入れ子 children として表現される。 ergonomic ではないが、 構造の不変性を確認する目的で明確。 値層 ( 数値 / bool / null ) は arg 位置に留まる ( 例: `version 1` の `1` は arg、 これ以上の展開不可 )。
-
-### AST layer の対応 ( 5 軸 × expand / collapse + Convention threading )
+### AST layer の対応 ( 5 軸 × expand/collapse、Convention threading )
 
 | 軸 | expand | collapse |
 |---|---|---|
@@ -822,34 +890,51 @@ lex {
 | 4. type annotation | `Document::expand_type_annotations(&target, &conv)` | `Document::collapse_type_annotations(&source, &conv)` |
 | 5. kind keyword | `Document::expand_kind_keyword(&target, &conv)` | `Document::collapse_kind_keyword(&source, &conv)` |
 
-各 変換は `&Convention` を取り、 conv の markers list 配下の immediate child を α semantics で preserve する。 axes 4 / 5 は target / source marker を per-call 指定 ( 利用者 は同じ Marker を conv にも include する )。
+各変換は `&Convention` を取る。
+conv の marker 配下の 直下の子ノードは、α semantics により保持される。
+軸 4・5 は target/source marker を per-call で指定し、利用者は同じ Marker を conv にも含める。
 
 ### read-side accessor ( 変換経由しない直接参照 )
 
-変換を実行せずに 利用者 が値を引きたい場合の accessor:
+変換を実行せずに 利用者が値を引きたい場合の accessor:
 
 | 軸 | accessor |
 |---|---|
 | 1. namespace | `node_name_as_nsid()` ( `.` split ) |
 | 2. procedure | `dot_chain_depth()` / `dot_chain_kind()` |
-| 3. property-child | `attribute_str` / `attribute_bool` / `attribute_int` ( property OR child-with-arg、 同値返却 ) |
-| 4. type annotation | `type_annotation()` ( node / entry の型 取得 ) |
-| 5. kind keyword | `structured_name()` / `_form_x()` / `_form_y()` |
+| 3. property-child | 下記の accessor ( 同値を返す ) |
+| 4. type annotation | `type_annotation()` ( ノード/entry の型取得 ) |
+| 5. kind keyword | 下記の accessor |
 
-read-side accessor は writing form ( property か child か、 form X か form Y か等 ) を 利用者 が選んでも一定値を返す。 同型の lookup 経路。
+property-child の accessor:
+
+- `attribute_str`
+- `attribute_bool`
+- `attribute_int`
+
+kind keyword の accessor:
+
+- `structured_name()`
+- `structured_name_form_x()`
+- `structured_name_form_y()`
+
+read-side accessor は、property か 子ノード か、X か Y かを利用者が選んでも一定値を返す。
+同型の lookup 経路である。
 
 ### AST layer の position
 
-AST layer は **「parser + パラメータ化可能な normalizer」** の 2 層構造:
+AST layer は **「構文解析器 + パラメータ化可能な normalizer」** の 2 層構造:
 
-- **parser ( neco-kdl )**: KDL syntax → 論理構造、 native KDL 全要素を保持
-- **AST layer ( neco-kdl-ast )**: 論理構造 + 利用者 が宣言する Convention で、 5 軸の同型変換 を提供
+- 構文解析器 ( neco-kdl ): KDL 構文を論理構造へ変換し、全要素を保持する
+- **AST layer ( neco-kdl-ast )**: 論理構造 + 利用者が宣言する Convention で、5 軸の同型変換 を提供
 
-`lex` / `app` / `integer` / `string` 等の semantic keyword 自体は 利用者 領域。 AST layer は「この prefix は marker」 「この kind 名は marker」 を 利用者 から受け取れば、 その意味論等価性を構造的 往復変換 として吸収する。
+kind 名や型名等の semantic keyword 自体は利用者の領域である。
+利用者が prefix や kind 名を marker と宣言すれば、その等価性を構造的往復変換として吸収する。
 
 ## Convention の正規形宣言
 
-`Convention` は marker reserved word の list に加えて、 軸 1-5 ごとの **正規形宣言** ( normal-form declaration ) を保持する。 `Document::render_as(&Convention) -> Document` はこの宣言に従って軸 1-5 の expand / collapse を crate 規定の順序で適用し、 結果 `Document` を返す。
+`Convention` は marker の list に加え、軸 1-5 ごとの正規形宣言を保持する。
+`render_as` はこの宣言に従い、軸 1-5 の expand / collapse を crate 規定の順序で適用する。
 
 ### per-axis 正規形宣言の型
 
@@ -878,27 +963,34 @@ pub struct Convention {
 }
 ```
 
-### 軸 OFF ( axis-off )
+### 軸 OFF
 
-`AxisForm::Off` / `PropertyChildForm::Off` は **該当軸の表記差を read 時に解釈せず入力 form のまま literal 保持** する宣言。 `Convention::default()` は全軸 OFF で、 既存 read accessor の振る舞いを完全互換に保つ ( 0.1.x からの downstream 追従ゼロ )。
+`AxisForm::Off` と `PropertyChildForm::Off` は、表記差を解釈せず入力のまま保持する宣言である。
+既定の `Convention` は全軸 off で、既存の 読み取りアクセサ の振る舞いを完全互換に保つ。
 
 ### 融合形 ( fused form )
 
-軸 3 ( property-child ) は KDL property syntax の entry-position 構文制約により、 expand 結果が **融合形のみ** ( `key=v` ↔ `mod_key v` の flat child node、 ここで `mod_key` は「key 自体が child node 名になる」 という abstract 表記、 literal prefix 文字列ではない ) を採る。 構造制約 axiom: `mod { key v }` 形 ( Nested variant ) は `PropertyChildForm` enum に存在しない = 構築不能。
+軸 3 ( property-child ) は、KDL property 構文の制約により expand 結果が融合形のみとなる。
+融合形は、`key=v` と `mod_key v` の flat 子ノード との対応である。
+`mod_key` は abstract 表記であり、そのままの prefix 文字列ではない。
+構造制約の axiom として、nested 形は `PropertyChildForm` enum に存在せず、構築できない。
 
-他 4 軸 ( namespace / procedure / type annotation / kind keyword ) は同 enum 型 ( `AxisForm` ) を共有し対称、 軸 3 のみ別 enum で非対称性を literal 表現する。
+他 4 軸 ( namespace・procedure・type annotation・kind keyword ) は同じ `AxisForm` 型を共有し対称である。
+軸 3 のみ別 enum で、この非対称性をそのまま表現する。
 
 ### `render_as` の軸間順序
 
-`render_as(&Convention)` は軸 5 → 軸 4 → 軸 1 → 軸 2 → 軸 3 の順で per-axis transform を適用する。 順序根拠は **marker 境界保護**:
+`render_as(&Convention)` は軸 5 → 軸 4 → 軸 1 → 軸 2 → 軸 3 の順で per-axis transform を適用する。順序根拠は **marker 境界保護**:
 
 1. 軸 5 ( kind keyword ) で marker prefix を立て
 2. 軸 4 ( type annotation ) で type marker を立て
-3. 軸 1 ( namespace ) で nest、 marker 配下を α semantics で preserve
+3. 軸 1 ( namespace ) の nest を適用する ( marker 配下は α semantics により保持 )
 4. 軸 2 ( procedure ) で procedure 構造を展開
 5. 軸 3 ( property-child ) で entry 位置を整える
 
-この順序は § 全 5 軸を適用した worked example の step 順と整合する。 軸 2 ( procedure ) は `Marker::Kind` を per-kind dot-chain target として再利用する ( consumer が `Convention::with_marker(Marker::Kind("call"))` で対象 kind を宣言 )。
+上記の具体例は、各軸の変換を個別の手順として順に適用したものであり、`render_as` が内部で用いる軸 5・4・1・2・3 の固定順序とは異なる ( § 軸 1・3・4・5 を適用した具体例 を参照 )。
+軸 2 ( procedure ) は `Marker::Kind` を dot-chain 対象として再利用する。
+利用者が `with_marker(Marker::Kind("call".to_owned()))` で対象を宣言する。
 
 ### 具体例
 
@@ -929,95 +1021,12 @@ let conv = Convention::new()
 let fully_expanded = doc.render_as(&conv);
 ```
 
-per-call `Convention` threading により、 同一 `Document` を異なる `Convention` で render することが可能 ( consumer ごとの読みやすい構造を場面で使い分ける )。
+`Convention` は呼び出しごとに指定するため、同一 `Document` を異なる正規形で render 可能である。
+利用者ごとに読みやすい構造を場面で使い分けられる。
 
-## 利用例 ( 3 利用者 横断 )
+## 利用例
 
-### laplan ( `.lex` )
-
-```kdl
-cratis "encoding" version=1 {
-    provides {
-        axiom "encoding.base64.encode"
-        axiom "encoding.base64.decode"
-    }
-    requires {
-        axiom "str"
-        axiom "bytes"
-    }
-}
-
-lex encoding.base64.encode {
-    procedure {
-        input { (bytes)input }
-        output { (str)result }
-    }
-}
-
-morph "crypto.jwt.issue" {
-    requires output="subject"
-    requires output="secret"
-    produces output="token"
-}
-
-morph.derives "str.contains" via compose {
-    sources "str.find" "i32.compare" "bool.not"
-    steps {
-        step "str.find" input="h,n" output="idx"
-        step "i32.compare" input="idx,0" output="cmp"
-    }
-    returns "result"
-}
-
-func.family "Numeric" {
-    members {
-        "i32" wasm="i32"
-        "f64" wasm="f64"
-    }
-    signature "add" { in { (Self)a; (Self)b } out { (Self)result } }
-}
-
-handler "ink.illo.dm.send" {
-    chain {
-        step "server.identity.resolve_pubkey" input="recipient-did" output="recipient-pubkey"
-        step "crypto.vault.create_sealed_dm" input="content,recipient-pubkey" output="sealed"
-    }
-}
-```
-
-### neployer ( `config.kdl` )
-
-```kdl
-app "alpha-shell" {
-    pacman "alpha-shell"
-
-    target "alpha-conf" {
-        writer "verbatim"
-        source "template/alpha.conf"
-        path "~/.config/alpha-shell/alpha.conf"
-    }
-
-    bindings {
-        @palette pacman="alpha-palette"
-    }
-
-    requires {
-        fact "platform.os" value="linux"
-    }
-
-    produces {
-        fact "shell.alpha.installed"
-    }
-}
-
-services {
-    user "background.service" unmanaged=#true {
-        reason "started by greetd session"
-    }
-}
-```
-
-### atproto Lexicon の KDL projection ( form Y、 type annotation 頻発 )
+### atproto Lexicon の KDL 表現 ( form Y・型注釈 頻発 )
 
 ```kdl
 lexicon app.bsky.actor.getProfile version=1 xrpc=query {

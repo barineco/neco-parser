@@ -1,35 +1,30 @@
-/// 軸 1 / 2 / 4 / 5 の正規形宣言。 4 軸対称、 軸 4 / 5 は marker を embed する variant も持つ。
+/// 軸 1 / 2 / 4 / 5 の正規形宣言。 4 軸は対称であり、 軸 4 / 5 は marker を内包する variant も持つ。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AxisForm {
-    /// OFF: 該当軸の表記差は read 時に解釈されず入力の literal 形で保持
+    /// OFF: 該当軸の表記差を読み取り時に解釈せず、 入力のまま保持する
     #[default]
     Off,
-    /// 展開形を正規形とする ( 軸 1 / 2 用、 軸 4 / 5 は ExpandWithMarker を使う )
+    /// 展開形を正規形とする ( 軸 1 / 2 用。 軸 4 / 5 は marker 内包 variant を使う )
     Expand,
-    /// 圧縮形を正規形とする ( 軸 1 / 2 用、 軸 4 / 5 は CollapseWithMarker を使う )
+    /// 圧縮形を正規形とする ( 軸 1 / 2 用。 軸 4 / 5 は marker 内包 variant を使う )
     Collapse,
-    /// 軸 4 / 5 用 expand、 marker を embed
+    /// 軸 4 / 5 用の展開形、 marker を内包する
     ExpandWithMarker(Marker),
-    /// 軸 4 / 5 用 collapse、 marker を embed
+    /// 軸 4 / 5 用の圧縮形、 marker を内包する
     CollapseWithMarker(Marker),
 }
 
-/// 軸 3 ( property-child ) 専用 enum。 融合形 axiom により他 4 軸と非対称。
-///
-/// 融合形 ( fused form ): `key=v` ↔ `mod_key v` ( flat child node、 ここで mod_key は
-/// 「key 自体が child node 名になる」 という abstract 表記、 literal prefix 文字列ではない )。
-///
-/// 構造制約 axiom: `mod { key v }` 形 ( Nested variant ) は enum に存在しない =
-/// 構築不能。 Expand / Collapse は対称だが、 軸 4 / 5 と異なり marker を embed しない
-/// ( KDL property syntax の entry-position 制約による非対称 )。
+/// 軸 3 ( property-child ) 専用の enum。 融合形の性質により他 4 軸と非対称である。
+/// property と子 node の相互変換に variant を限定し、 他軸と異なり marker を
+/// 内包しない構成を採る。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PropertyChildForm {
-    /// OFF: property / child は read 時に解釈されず入力 form のまま
+    /// OFF: property と child は読み取り時に解釈せず、 入力の形のまま保持する
     #[default]
     Off,
-    /// fused-form expand: properties → flat `key v` child nodes
+    /// 展開: property を key-value の子 node へ変換する
     Expand,
-    /// fused-form collapse: flat `key v` child nodes → properties
+    /// 圧縮: key-value の子 node を property へ変換する
     Collapse,
 }
 
@@ -163,17 +158,12 @@ mod tests {
         );
     }
 
-    /// 軸 3 融合形 axiom: PropertyChildForm enum は Off / Expand / Collapse の 3 variant のみで
-    /// `mod { key v }` 形 ( Nested variant ) は構築不能。
-    /// `rg fused_form|mod_key v` driver は本 enum doc comment の literal 文字列で hit。
     #[test]
     fn property_child_fused_form_only() {
-        // 構築可能な variant は 3 つだけ ( Expand / Collapse は fused form のみ採る )
         let _off = PropertyChildForm::Off;
         let _expand = PropertyChildForm::Expand;
         let _collapse = PropertyChildForm::Collapse;
-        // PropertyChildForm::Nested は存在しない ( enum 定義が axiom )
-        // → コンパイルが通った時点で literal 検査済
+
         let names = format!(
             "{:?} {:?} {:?}",
             PropertyChildForm::Off,

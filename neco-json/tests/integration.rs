@@ -1,9 +1,7 @@
 use neco_json::{encode, parse, JsonValue};
 
 #[test]
-fn acceptance_1_and_2_crate_build_contract_is_visible_from_public_api() {
-    // 受け入れ基準 1: no_std + alloc の公開 API で crate を利用できる。
-    // 受け入れ基準 2: 外部依存ゼロでも外部クレートとして parse/encode/accessor を使える。
+fn crate_build_contract_is_visible_from_public_api() {
     let value = parse(br#"{"ok":true}"#).expect("public parse should work");
     assert_eq!(value.required_bool("ok"), Ok(true));
     assert_eq!(
@@ -13,9 +11,7 @@ fn acceptance_1_and_2_crate_build_contract_is_visible_from_public_api() {
 }
 
 #[test]
-fn acceptance_3_and_7_parse_complex_structure_and_read_with_accessors() {
-    // 受け入れ基準 3: RFC 8259 の基本構文を含む複雑な JSON を正しく parse できる。
-    // 受け入れ基準 7: accessor API で required/optional の用途をカバーできる。
+fn parse_complex_structure_and_read_with_accessors() {
     let payload = br#"{
         "repo":"did:plc:alice",
         "active":true,
@@ -55,15 +51,13 @@ fn acceptance_3_and_7_parse_complex_structure_and_read_with_accessors() {
 }
 
 #[test]
-fn acceptance_4_unicode_surrogate_pair_roundtrips_through_public_api() {
-    // 受け入れ基準 4: \uXXXX サロゲートペアを decode できる。
+fn unicode_surrogate_pair_decodes_through_public_api() {
     let value = parse(br#"{"emoji":"\uD83D\uDE80"}"#).expect("unicode payload should parse");
     assert_eq!(value.required_str("emoji"), Ok("🚀"));
 }
 
 #[test]
-fn acceptance_5_roundtrip_preserves_complex_value_equivalence() {
-    // 受け入れ基準 5: encode -> parse roundtrip が JsonValue の等価性を保つ。
+fn roundtrip_preserves_complex_value_equivalence() {
     let value = JsonValue::Object(vec![
         (
             "meta".into(),
@@ -102,8 +96,7 @@ fn acceptance_5_roundtrip_preserves_complex_value_equivalence() {
 }
 
 #[test]
-fn acceptance_6_depth_limit_is_enforced() {
-    // 受け入れ基準 6: 深すぎる入力で NestingTooDeep を返す。
+fn depth_limit_is_enforced() {
     let mut input = vec![b'['; 129];
     input.extend(vec![b']'; 129]);
     let error = parse(&input).expect_err("depth overflow should fail");
@@ -114,8 +107,7 @@ fn acceptance_6_depth_limit_is_enforced() {
 }
 
 #[test]
-fn acceptance_8_end_to_end_atproto_like_payload_parses_and_accesses() {
-    // 受け入れ基準 8: cargo test 対象の統合テストとして end-to-end を検証する。
+fn end_to_end_atproto_like_payload_parses_and_accesses() {
     let response = br#"{
         "did":"did:plc:alice",
         "handle":"alice.test",

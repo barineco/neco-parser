@@ -2,15 +2,20 @@
 
 [日本語](README-ja.md)
 
-necosystems series structured access layer for YAML values.
+Structured access layer for YAML values.
 
 ## Features
 
 - Owned `YmlDocument` wrapping `YmlValue` for cross-crate trait use
 - Borrowed `YmlNode<'a>` carrying an optional field key
-- `parse` re-export that turns `&str` into `YmlDocument`
+- `parse` re-export that turns a string slice into `YmlDocument`
 - `StructuredDocument` impl exposing mapping fields as top-level nodes
-- `StructuredNode` impl providing `kind`, `identifier`, `attribute`, `children`, and `value`
+- `StructuredNode` impl providing these accessor methods:
+  - `kind`
+  - `identifier`
+  - `attribute`
+  - `children`
+  - `value`
 
 ## Usage
 
@@ -29,10 +34,17 @@ assert_eq!(node.kind(), "name");
 | `parse(input: &str) -> Result<YmlDocument, ParseError>` | Parses input via `neco-yml` and wraps the value |
 | `YmlDocument` | Owned wrapper around `YmlValue` |
 | `YmlNode<'a>` | Borrowed view with an optional field key |
-| `YmlDocument::from_value` / `as_value` | Constructs from or reads the inner `YmlValue` |
-| `YmlNode::from_value` / `as_value` | Constructs a root view or reads the inner `YmlValue` |
+| `YmlDocument::from_value` / `as_value` | Constructs from or reads the inner YmlValue |
+| `YmlNode::from_value` / `as_value` | Constructs a root view or reads the inner YmlValue |
 | `impl StructuredDocument for YmlDocument` | `nodes()` yields mapping fields, or the root value |
-| `impl StructuredNode for YmlNode<'_>` | Implements `kind`, `identifier`, `attribute`, `children`, and `value` |
+
+`impl StructuredNode for YmlNode<'_>` implements:
+
+- `kind`
+- `identifier`
+- `attribute`
+- `children`
+- `value`
 
 ## License
 

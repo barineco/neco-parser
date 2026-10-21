@@ -7,7 +7,7 @@
 ## 機能
 
 - 引用なし / 単引用 / 二重引用のキーを持つオブジェクト解析
-- `null` / `bool` / `number` / `string` のスカラー解析
+- null / bool / number / string のスカラー解析
 - カンマ区切りのスカラー値による配列解析
 - オブジェクトフィールドを `Vec<(String, Json5Value)>` として出現順で保持
 - バイト位置とメッセージを持つ `ParseError`
@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | 項目 | 説明 |
 |---|---|
 | `parse(input: &str) -> Result<Json5Value, ParseError>` | 対応する JSON5 部分集合の読み込み |
-| `Json5Value` | `Null`、 `Bool`、 `Number(f64)`、 `String`、 `List`、 順序付き `Map` |
+| `Json5Value` | 解析結果の値 ( バリアントは下記 ) |
 | `ParseError` | バイト位置とメッセージ |
+
+`Json5Value` のバリアント:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` ( 順序付き )
 
 ## 対応範囲
 
-設定ファイル形の JSON5 オブジェクト文書、 よく使われるスカラー値、 スカラー配列を扱います。 重複するオブジェクトキーは出現順で保持し、 JSON5 文法全体は実装しません。
+設定ファイル形の JSON5 オブジェクト文書、よく使われるスカラー値、スカラー配列を扱います。重複するオブジェクトキーは出現順で保持し、この部分集合として JSON5 文法を実装します。
 
 ## ライセンス
 

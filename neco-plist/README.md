@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | Item | Description |
 |---|---|
 | `parse(input: &str) -> Result<PlistValue, ParseError>` | Parses the supported plist XML subset |
-| `PlistValue` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
+| `PlistValue` | Parsed value, one of the variants below |
 | `ParseError` | Reports byte position and message |
+
+`PlistValue` variants:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` (ordered)
 
 ## Format support
 
-The supported subset covers lightweight XML property-list shapes used as configuration data. It maps element names to fields and preserves field order. Binary plist and full Apple plist semantics are represented by later parser coverage, not this minimal subset crate.
+The supported subset covers lightweight XML property-list shapes used as configuration data. It maps element names to fields and preserves field order, independent of binary plist and full Apple plist semantics.
 
 ## License
 

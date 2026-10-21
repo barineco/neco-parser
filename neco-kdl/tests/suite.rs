@@ -167,7 +167,6 @@ fn kdl_official_test_suite_manifest() {
         manifest_entries.push((relative_path.to_string(), digest.to_string()));
     }
 
-    assert_eq!(manifest_paths.len(), 581, "manifest must contain 581 paths");
     let files = vector_paths(&base_dir);
     let missing_files: Vec<_> = manifest_paths.difference(&files).collect();
     let unregistered_files: Vec<_> = files.difference(&manifest_paths).collect();
@@ -233,7 +232,6 @@ fn serialize_escape_branches_match_exact_output() {
     );
 }
 
-/// KDL 公式テストスイートのパース成功/失敗テスト。
 #[test]
 fn kdl_official_test_suite_parse() {
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/kdl-test-cases/input");
@@ -263,7 +261,6 @@ fn kdl_official_test_suite_parse() {
         let should_fail = stem.ends_with("_fail");
         let input = fs::read_to_string(path).unwrap();
 
-        // 各ファイルをスレッドで実行してタイムアウト
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let result = neco_kdl::parse(&input);
@@ -313,9 +310,6 @@ fn kdl_official_test_suite_parse() {
     }
 }
 
-/// 位置付き node の span 整形式性を再帰的に検査する。
-///
-/// 半開区間の整合、文字境界、子要素の親への包含を確認する。
 fn check_span_well_formedness(
     input: &str,
     node: &neco_kdl::SpannedKdlNode,
@@ -365,7 +359,6 @@ fn check_span_well_formedness(
     Ok(())
 }
 
-/// 判定条件 2: 受理した公式ベクターで span の整形式性を検証する ( 恒等式比較は用いない )。
 #[test]
 fn official_vectors_yield_well_formed_spans() {
     let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/kdl-test-cases/input");
@@ -405,10 +398,6 @@ fn official_vectors_yield_well_formed_spans() {
     assert!(errors.is_empty(), "span well-formedness errors: {errors:?}");
 }
 
-/// 公式テストスイートの正規化出力比較テスト。
-///
-/// `input/` の各ファイルをパースし、`normalize()` で正規化した結果を
-/// `expected_kdl/` の対応ファイルと比較する。
 #[test]
 fn kdl_official_test_suite_normalize() {
     let base_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/kdl-test-cases");

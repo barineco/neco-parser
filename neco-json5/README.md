@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | Item | Description |
 |---|---|
 | `parse(input: &str) -> Result<Json5Value, ParseError>` | Parses the supported JSON5 subset |
-| `Json5Value` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
+| `Json5Value` | Parsed value, one of the variants below |
 | `ParseError` | Reports byte position and message |
+
+`Json5Value` variants:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` (ordered)
 
 ## Format support
 
-The supported subset covers configuration-shaped JSON5 object documents, common scalar values, and scalar arrays. It keeps duplicate object keys in order and does not implement the full JSON5 grammar.
+The supported subset covers configuration-shaped JSON5 object documents, common scalar values, and scalar arrays. It keeps duplicate object keys in order, implementing this subset of the JSON5 grammar.
 
 ## License
 

@@ -32,7 +32,8 @@ impl Document {
     }
 
     pub fn expand_dot_chain(self, kind: &str, conv: &Convention) -> (Self, TransformOutcome) {
-        let mut nodes = self.document.nodes;
+        let original = self.document.nodes;
+        let mut nodes = original.clone();
         let result = expand_dot_chain_nodes(&mut nodes, kind, conv);
         match result {
             Ok(changed) => (
@@ -40,7 +41,7 @@ impl Document {
                 outcome(changed, "no dot chain"),
             ),
             Err(reason) => (
-                Self::from_kdl(KdlDocument { nodes }),
+                Self::from_kdl(KdlDocument { nodes: original }),
                 TransformOutcome::NoOp { reason },
             ),
         }
@@ -335,8 +336,12 @@ fn expand_kind_node(mut node: KdlNode, skip_name: bool, marker: &Marker) -> (Vec
         return (vec![node], false);
     }
     let entries = std::mem::take(&mut node.entries);
-    let Some((identifier, rest_entries)) = take_first_string_arg(entries) else {
-        return (vec![node], false);
+    let (identifier, rest_entries) = match take_first_string_arg(entries) {
+        Ok(found) => found,
+        Err(entries) => {
+            node.entries = entries;
+            return (vec![node], false);
+        }
     };
     let marker = KdlNode {
         ty: None,
@@ -378,7 +383,7 @@ fn collapse_kind_node(mut node: KdlNode, skip_name: bool, source: &Marker) -> (V
     (vec![node], true)
 }
 
-fn take_first_string_arg(entries: Vec<KdlEntry>) -> Option<(String, Vec<KdlEntry>)> {
+fn take_first_string_arg(entries: Vec<KdlEntry>) -> Result<(String, Vec<KdlEntry>), Vec<KdlEntry>> {
     let mut found = None;
     let mut rest = Vec::new();
     for entry in entries {
@@ -393,7 +398,10 @@ fn take_first_string_arg(entries: Vec<KdlEntry>) -> Option<(String, Vec<KdlEntry
             (_, entry) => rest.push(entry),
         }
     }
-    found.map(|value| (value, rest))
+    match found {
+        Some(value) => Ok((value, rest)),
+        None => Err(rest),
+    }
 }
 
 fn marker_wrapper(marker: &Marker, payload: &str, child: KdlNode) -> KdlNode {
@@ -873,5 +881,53 @@ mod tests {
         let (flat, _) = nested.flatten(&conv);
         let (collapsed, _) = flat.collapse_type_annotations(&marker, &conv);
         assert_eq!(collapsed.as_kdl(), doc.as_kdl());
+    }
+
+    #[test]
+    fn kind_expansion_preserves_entries_without_an_identifier() {
+        for input in [
+            "version 1\n",
+            "enabled #true\n",
+            "empty #null\n",
+            "node key=\"value\"\n",
+            "node (label)\"typed\"\n",
+        ] {
+            for marker in [Marker::Prefix('@'), Marker::Kind("_id".to_owned())] {
+                let original = Document::parse(input).expect("parse");
+                let (expanded, outcome) = original
+                    .clone()
+                    .expand_kind_keyword(&marker, &Convention::new());
+                assert!(matches!(outcome, TransformOutcome::NoOp { .. }));
+                assert_eq!(expanded.as_kdl(), original.as_kdl());
+            }
+        }
+    }
+
+    #[test]
+    fn kind_round_trip_preserves_neighboring_entries_and_child_values() {
+        let original =
+            Document::parse("node \"id\" 42 enabled=#true { child 7 }\n").expect("parse");
+        let marker = Marker::Prefix('@');
+        let conv = Convention::new().with_marker(marker.clone());
+        let (expanded, outcome) = original.clone().expand_kind_keyword(&marker, &conv);
+        assert_eq!(outcome, TransformOutcome::Applied);
+        let (collapsed, outcome) = expanded.collapse_kind_keyword(&marker, &conv);
+        assert_eq!(outcome, TransformOutcome::Applied);
+        assert_eq!(collapsed.as_kdl(), original.as_kdl());
+    }
+
+    #[test]
+    fn rejected_dot_chain_expansion_preserves_the_whole_document() {
+        for input in [
+            "call \"a\"\n..call \"b\"\nsentinel 7\n",
+            "container { call \"a\"\n.call \"b\" }\ncall \"c\"\n..call \"d\"\n",
+        ] {
+            let original = Document::parse(input).expect("parse");
+            let (expanded, outcome) = original
+                .clone()
+                .expand_dot_chain("call", &Convention::new());
+            assert!(matches!(outcome, TransformOutcome::NoOp { .. }));
+            assert_eq!(expanded.as_kdl(), original.as_kdl());
+        }
     }
 }

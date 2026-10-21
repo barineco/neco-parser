@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn as_i64_and_as_u64_added_to_json_value() {
+    fn json_value_integer_accessors_return_only_exact_integers() {
         let n = JsonValue::Number(7.0);
         assert_eq!(n.as_i64(), Some(7_i64));
         assert_eq!(n.as_u64(), Some(7_u64));
@@ -264,5 +264,15 @@ mod tests {
         let frac = JsonValue::Number(1.5);
         assert_eq!(frac.as_i64(), None);
         assert_eq!(frac.as_u64(), None);
+
+        let i64_min = JsonValue::Number(-9_223_372_036_854_775_808.0);
+        assert_eq!(i64_min.as_i64(), Some(i64::MIN));
+
+        let two_pow_63 = JsonValue::Number(9_223_372_036_854_775_808.0);
+        assert_eq!(two_pow_63.as_i64(), None);
+        assert_eq!(two_pow_63.as_u64(), Some(1_u64 << 63));
+
+        let two_pow_64 = JsonValue::Number(18_446_744_073_709_551_616.0);
+        assert_eq!(two_pow_64.as_u64(), None);
     }
 }

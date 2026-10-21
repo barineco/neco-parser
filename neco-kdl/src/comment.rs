@@ -1,7 +1,6 @@
 use crate::scan::{is_newline, is_unicode_space, Scanner};
 use crate::{KdlError, KdlErrorKind};
 
-/// `//` から改行または EOF までスキップする。`//` は既に消費済みの前提。
 pub(crate) fn skip_single_line_comment(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     while let Some(ch) = s.peek() {
         if is_newline(ch) {
@@ -12,7 +11,6 @@ pub(crate) fn skip_single_line_comment(s: &mut Scanner<'_>) -> Result<(), KdlErr
     Ok(())
 }
 
-/// `/* */` のネスト対応ブロックコメントをスキップする。`/*` は既に消費済みの前提。
 pub(crate) fn skip_block_comment(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     let mut depth: usize = 1;
     while depth > 0 {
@@ -36,7 +34,6 @@ pub(crate) fn skip_block_comment(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     Ok(())
 }
 
-/// ws をスキップする。ws := unicode-space | multi-line-comment
 pub(crate) fn skip_ws(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     loop {
         match s.peek() {
@@ -44,8 +41,8 @@ pub(crate) fn skip_ws(s: &mut Scanner<'_>) -> Result<(), KdlError> {
                 s.advance();
             }
             Some('/') if s.peek_next() == Some('*') => {
-                s.advance(); // /
-                s.advance(); // *
+                s.advance();
+                s.advance();
                 skip_block_comment(s)?;
             }
             _ => break,
@@ -54,7 +51,6 @@ pub(crate) fn skip_ws(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     Ok(())
 }
 
-/// line-space := node-space | newline | single-line-comment
 pub(crate) fn skip_line_space(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     loop {
         match s.peek() {
@@ -66,19 +62,18 @@ pub(crate) fn skip_line_space(s: &mut Scanner<'_>) -> Result<(), KdlError> {
             }
             Some('/') => match s.peek_next() {
                 Some('/') => {
-                    s.advance(); // /
-                    s.advance(); // /
+                    s.advance();
+                    s.advance();
                     skip_single_line_comment(s)?;
                 }
                 Some('*') => {
-                    s.advance(); // /
-                    s.advance(); // *
+                    s.advance();
+                    s.advance();
                     skip_block_comment(s)?;
                 }
                 _ => break,
             },
             Some('\\') => {
-                // escline の可能性: \ ws* (single-line-comment | newline | eof)
                 if try_skip_escline(s)? {
                     continue;
                 }
@@ -90,10 +85,6 @@ pub(crate) fn skip_line_space(s: &mut Scanner<'_>) -> Result<(), KdlError> {
     Ok(())
 }
 
-/// node-space := ws* (escline ws*)+ | ws+
-/// 最低 1 つの ws または escline を消費する必要がある。
-/// 呼び出し元がノード内のスペース区切りを期待する場合に使う。
-/// 何も消費できなかった場合は false を返す。
 pub(crate) fn skip_node_space(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     let start = s.byte_offset();
     skip_ws(s)?;
@@ -108,15 +99,13 @@ pub(crate) fn skip_node_space(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     Ok(had_ws || had_escline)
 }
 
-/// escline := '\' ws* (single-line-comment | newline | eof)
-/// 成功時は true を返し、消費する。失敗時は位置を復元して false を返す。
 fn try_skip_escline(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
     if s.peek() != Some('\\') {
         return Ok(false);
     }
 
     let saved = s.save();
-    s.advance(); // consume '\'
+    s.advance();
     skip_ws(s)?;
 
     match s.peek() {
@@ -124,8 +113,7 @@ fn try_skip_escline(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
             s.advance();
             s.advance();
             skip_single_line_comment(s)?;
-            // single-line comment はコメント後に改行/EOF を含む
-            // consume_newline は skip_single_line_comment が行わないので呼ぶ
+
             s.consume_newline();
             Ok(true)
         }
@@ -133,10 +121,7 @@ fn try_skip_escline(s: &mut Scanner<'_>) -> Result<bool, KdlError> {
             s.consume_newline();
             Ok(true)
         }
-        None => {
-            // EOF : escline は EOF で終了可能
-            Ok(true)
-        }
+        None => Ok(true),
         _ => {
             s.restore(saved);
             Ok(false)
@@ -167,13 +152,10 @@ mod tests {
         let mut s = Scanner::new(" outer /* inner */ still */ rest");
         skip_block_comment(&mut s).unwrap();
         assert_eq!(s.peek(), Some(' '));
-        // " rest" が残る
     }
 
     #[test]
     fn block_comment_deeply_nested() {
-        // skip_block_comment は `/*` 消費済みの前提で呼ぶ
-        // ネスト深度 3: /* a /* b /* c */ */ */
         let mut s = Scanner::new(" a /* b /* c */ */ */x");
         skip_block_comment(&mut s).unwrap();
         assert_eq!(s.peek(), Some('x'));

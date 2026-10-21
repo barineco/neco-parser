@@ -2,12 +2,13 @@
 
 ## Scope
 
-`neco-parser` is a crates.io-oriented monorepo for parser-only crates (KDL / JSON / future syntax-to-AST converters). The repository was extracted from `barineco/neco-crates` so that parser crates can release independently of the broader monorepo. Small, focused changes are preferred over broad speculative rewrites.
+`neco-parser` is a crates.io-oriented monorepo for parser-only crates that read structured text formats such as KDL, JSON, JSON5, TOML, YAML, XML, and plist into typed representations.
+Small, focused changes are preferred over broad speculative rewrites.
 
 ## Independent release policy
 
 - Each member crate is published to crates.io independently.
-- Version bumps are per-crate; do not couple version numbers across members unless an API change forces it.
+- Version bumps are per-crate; version numbers stay independent across members unless an API change forces coupling.
 - Public API of an existing crate must remain backward-compatible within a major version. Breaking changes require a new major version of that crate alone (other members unaffected).
 
 ## Zero-dependency direction
@@ -38,4 +39,5 @@ cargo test --workspace
 - Crates in this repository must remain publishable independently.
 - Path dependencies must include a version fallback when they point to another workspace crate (so each crate is publishable on its own).
 - Public-facing metadata in each `Cargo.toml` should remain suitable for crates.io.
-- `repository` field of each `Cargo.toml` points to `https://github.com/barineco/neco-parser`.
+- `repository` field of each `Cargo.toml` points to the monorepo origin.
+- The origin is `https://github.com/barineco/neco-parser`.

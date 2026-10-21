@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | Item | Description |
 |---|---|
 | `parse(input: &str) -> Result<YmlValue, ParseError>` | Parses the supported YAML subset |
-| `YmlValue` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
+| `YmlValue` | Parsed value, one of the variants below |
 | `ParseError` | Reports line position and message |
+
+`YmlValue` variants:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` (ordered)
 
 ## Format support
 
-The supported subset covers flat configuration-shaped YAML with scalar values and simple lists. It preserves duplicate keys in source order and does not implement anchors, tags, merge keys, or full YAML document streams.
+The supported subset covers flat configuration-shaped YAML with scalar values and simple lists. It preserves duplicate keys in source order, independent of anchors, tags, merge keys, and full YAML document streams.
 
 ## License
 

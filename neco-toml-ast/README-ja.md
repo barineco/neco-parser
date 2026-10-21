@@ -2,15 +2,20 @@
 
 [English](README.md)
 
-`neco-toml-ast` は TOML の値を共有 `neco-ast` trait で読むための crate です。
+`neco-toml-ast` は TOML の値を共有 `neco-ast` trait で読むためのライブラリです。
 
 ## 機能
 
 - `TomlValue` を保持する所有 `TomlDocument`
-- 任意のフィールドキーを持つ借用 `TomlNode<'a>`
-- `&str` を `TomlDocument` に包む `parse` 再エクスポート
+- 省略可能なフィールドキーを持つ借用 `TomlNode<'a>`
+- 文字列を `TomlDocument` に包む `parse` 再エクスポート
 - 上位のマッピングフィールドをノード列として返す `StructuredDocument` 実装
-- 値型に対する `kind` / `identifier` / `attribute` / `children` / `value` を提供する `StructuredNode` 実装
+- `StructuredNode` 実装が提供するアクセサ:
+  - `kind`
+  - `identifier`
+  - `attribute`
+  - `children`
+  - `value`
 
 ## 使い方
 
@@ -26,13 +31,20 @@ assert_eq!(node.kind(), "name");
 
 | 項目 | 説明 |
 |---|---|
-| `parse(input: &str) -> Result<TomlDocument, ParseError>` | `neco-toml` で解析し `TomlDocument` で包む |
+| `parse(input: &str) -> Result<TomlDocument, ParseError>` | `neco-toml` で解析して包む |
 | `TomlDocument` | `TomlValue` を保持する所有ラッパー |
-| `TomlNode<'a>` | 任意のフィールドキーを持つ借用ビュー |
-| `TomlDocument::from_value` / `as_value` | 内部 `TomlValue` の生成と参照 |
-| `TomlNode::from_value` / `as_value` | 根ビューの生成と内部 `TomlValue` の参照 |
-| `impl StructuredDocument for TomlDocument` | `nodes()` がマッピングフィールドを返す ( 非マッピングは根単体 ) |
-| `impl StructuredNode for TomlNode<'_>` | `kind` / `identifier` / `attribute` / `children` / `value` を実装 |
+| `TomlNode<'a>` | 省略可能なフィールドキーを持つ借用ビュー |
+| `TomlDocument::from_value` / `as_value` | 内部 TomlValue の生成と参照 |
+| `TomlNode::from_value` / `as_value` | 根ビューの生成と内部 TomlValue の参照 |
+| `impl StructuredDocument for TomlDocument` | マッピングフィールドを返す ( 非マッピングは根単体 ) |
+
+`impl StructuredNode for TomlNode<'_>` が実装するアクセサ:
+
+- `kind`
+- `identifier`
+- `attribute`
+- `children`
+- `value`
 
 ## ライセンス
 

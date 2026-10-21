@@ -2,7 +2,8 @@
 
 [English](README.md)
 
-`neco-ast` は `neco-parser` の各 crate が生成した構造データを、形式中立の trait と値型で読むための crate です。
+`neco-ast` は、`neco-parser` の各 crate が生成した構造データを読むための crate です。
+読み込みには、形式中立の trait と値型を使います。
 
 ## 使い方
 

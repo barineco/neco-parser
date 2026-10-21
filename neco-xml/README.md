@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | Item | Description |
 |---|---|
 | `parse(input: &str) -> Result<XmlValue, ParseError>` | Parses the supported XML subset |
-| `XmlValue` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
+| `XmlValue` | Parsed value, one of the variants below |
 | `ParseError` | Reports byte position and message |
+
+`XmlValue` variants:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` (ordered)
 
 ## Format support
 
-The supported subset covers compact XML element trees used as configuration data. It maps element names to fields, preserves order, and does not implement namespaces, DTD, entity expansion, or schema validation.
+The supported subset covers compact XML element trees used as configuration data. It maps element names to fields and preserves order, independent of namespace declarations, DTD, entity expansion, and schema validation.
 
 ## License
 

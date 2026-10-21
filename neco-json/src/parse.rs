@@ -1,409 +1,58 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::error::{ParseError, ParseErrorKind};
-use crate::value::JsonValue;
-
-const MAX_DEPTH: usize = 128;
-
-struct Parser<'a> {
-    input: &'a [u8],
-    position: usize,
-    depth: usize,
-}
+use crate::borrowed::{JsonArrayItems, JsonKind, JsonObjectEntries, JsonRef};
+use crate::decode_char::DecodedChars;
+use crate::scan;
+use crate::{JsonValue, ParseError, ParseErrorKind};
 
 /// Parses a JSON byte slice into a `JsonValue`.
 pub fn parse(input: &[u8]) -> Result<JsonValue, ParseError> {
-    let mut parser = Parser {
-        input,
-        position: 0,
-        depth: 0,
-    };
-    let value = parser.parse_value()?;
-    parser.skip_whitespace();
-    if parser.position < parser.input.len() {
-        return Err(parser.error(ParseErrorKind::TrailingContent));
-    }
-    Ok(value)
+    let value = scan::document(input)?;
+    let text = core::str::from_utf8(input).map_err(|error| ParseError {
+        kind: ParseErrorKind::InvalidUtf8,
+        position: error.valid_up_to(),
+    })?;
+    owned(JsonRef::scanned(text, value))
 }
 
-impl<'a> Parser<'a> {
-    fn error(&self, kind: ParseErrorKind) -> ParseError {
-        ParseError {
-            kind,
-            position: self.position,
-        }
+fn string(value: JsonRef<'_>) -> Result<String, ParseError> {
+    let mut output = String::new();
+    for character in DecodedChars::new(value.input.as_bytes(), value.start)? {
+        output.push(character?);
     }
-
-    fn error_at(&self, position: usize, kind: ParseErrorKind) -> ParseError {
-        ParseError { kind, position }
-    }
-
-    fn peek(&self) -> Option<u8> {
-        self.input.get(self.position).copied()
-    }
-
-    fn advance(&mut self) -> Option<u8> {
-        let byte = self.input.get(self.position).copied();
-        if byte.is_some() {
-            self.position += 1;
-        }
-        byte
-    }
-
-    fn expect(&mut self, expected: u8) -> Result<(), ParseError> {
-        match self.advance() {
-            Some(b) if b == expected => Ok(()),
-            Some(b) => {
-                Err(self.error_at(self.position - 1, ParseErrorKind::UnexpectedCharacter(b)))
-            }
-            None => Err(self.error(ParseErrorKind::UnexpectedEnd)),
-        }
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(b) = self.peek() {
-            match b {
-                b' ' | b'\t' | b'\n' | b'\r' => {
-                    self.position += 1;
-                }
-                _ => break,
-            }
-        }
-    }
-
-    fn parse_value(&mut self) -> Result<JsonValue, ParseError> {
-        self.skip_whitespace();
-        match self.peek() {
-            Some(b'n') => self.parse_null(),
-            Some(b't') => self.parse_true(),
-            Some(b'f') => self.parse_false(),
-            Some(b'"') => self.parse_string().map(JsonValue::String),
-            Some(b'[') => self.parse_array(),
-            Some(b'{') => self.parse_object(),
-            Some(b'-') | Some(b'0'..=b'9') => self.parse_number(),
-            Some(b) => Err(self.error(ParseErrorKind::UnexpectedCharacter(b))),
-            None => Err(self.error(ParseErrorKind::UnexpectedEnd)),
-        }
-    }
-
-    fn parse_null(&mut self) -> Result<JsonValue, ParseError> {
-        self.expect_literal(b"null")?;
-        Ok(JsonValue::Null)
-    }
-
-    fn parse_true(&mut self) -> Result<JsonValue, ParseError> {
-        self.expect_literal(b"true")?;
-        Ok(JsonValue::Bool(true))
-    }
-
-    fn parse_false(&mut self) -> Result<JsonValue, ParseError> {
-        self.expect_literal(b"false")?;
-        Ok(JsonValue::Bool(false))
-    }
-
-    fn expect_literal(&mut self, literal: &[u8]) -> Result<(), ParseError> {
-        for &expected in literal {
-            match self.advance() {
-                Some(b) if b == expected => {}
-                Some(b) => {
-                    return Err(
-                        self.error_at(self.position - 1, ParseErrorKind::UnexpectedCharacter(b))
-                    )
-                }
-                None => return Err(self.error(ParseErrorKind::UnexpectedEnd)),
-            }
-        }
-        Ok(())
-    }
-
-    fn parse_number(&mut self) -> Result<JsonValue, ParseError> {
-        let start = self.position;
-
-        // optional minus
-        if self.peek() == Some(b'-') {
-            self.position += 1;
-        }
-
-        // integer part
-        match self.peek() {
-            Some(b'0') => {
-                self.position += 1;
-                // Digits after a leading zero are not allowed.
-                // The trailing-content check catches them.
-            }
-            Some(b'1'..=b'9') => {
-                self.position += 1;
-                while let Some(b'0'..=b'9') = self.peek() {
-                    self.position += 1;
-                }
-            }
-            _ => return Err(self.error(ParseErrorKind::InvalidNumber)),
-        }
-
-        // fraction
-        if self.peek() == Some(b'.') {
-            self.position += 1;
-            let frac_start = self.position;
-            while let Some(b'0'..=b'9') = self.peek() {
-                self.position += 1;
-            }
-            if self.position == frac_start {
-                return Err(self.error(ParseErrorKind::InvalidNumber));
-            }
-        }
-
-        // exponent
-        if matches!(self.peek(), Some(b'e') | Some(b'E')) {
-            self.position += 1;
-            if matches!(self.peek(), Some(b'+') | Some(b'-')) {
-                self.position += 1;
-            }
-            let exp_start = self.position;
-            while let Some(b'0'..=b'9') = self.peek() {
-                self.position += 1;
-            }
-            if self.position == exp_start {
-                return Err(self.error(ParseErrorKind::InvalidNumber));
-            }
-        }
-
-        let slice = &self.input[start..self.position];
-        // UTF-8 safe: number literals are ASCII only.
-        let s = core::str::from_utf8(slice).map_err(|_| self.error(ParseErrorKind::InvalidUtf8))?;
-        let value: f64 = s
-            .parse()
-            .map_err(|_| self.error(ParseErrorKind::InvalidNumber))?;
-        Ok(JsonValue::Number(value))
-    }
-
-    fn parse_string(&mut self) -> Result<String, ParseError> {
-        self.expect(b'"')?;
-        let mut buf = String::new();
-        loop {
-            match self.advance() {
-                Some(b'"') => return Ok(buf),
-                Some(b'\\') => {
-                    let ch = self.parse_escape()?;
-                    buf.push(ch);
-                }
-                Some(b) if b < 0x20 => {
-                    return Err(
-                        self.error_at(self.position - 1, ParseErrorKind::UnexpectedCharacter(b))
-                    );
-                }
-                Some(b) => {
-                    let width = utf8_char_width(b);
-                    if width == 0 {
-                        return Err(self.error(ParseErrorKind::InvalidUtf8));
-                    }
-                    if width == 1 {
-                        buf.push(b as char);
-                    } else {
-                        let start = self.position - 1;
-                        let mut bytes = [0_u8; 4];
-                        bytes[0] = b;
-
-                        for slot in bytes.iter_mut().take(width).skip(1) {
-                            *slot = match self.advance() {
-                                Some(cont) => cont,
-                                None => return Err(self.error(ParseErrorKind::InvalidUtf8)),
-                            };
-                        }
-
-                        if !is_valid_utf8_sequence(&bytes[..width]) {
-                            return Err(self.error(ParseErrorKind::InvalidUtf8));
-                        }
-
-                        let s = core::str::from_utf8(&self.input[start..self.position])
-                            .map_err(|_| self.error(ParseErrorKind::InvalidUtf8))?;
-                        buf.push_str(s);
-                    }
-                }
-                None => return Err(self.error(ParseErrorKind::UnexpectedEnd)),
-            }
-        }
-    }
-
-    fn parse_escape(&mut self) -> Result<char, ParseError> {
-        match self.advance() {
-            Some(b'"') => Ok('"'),
-            Some(b'\\') => Ok('\\'),
-            Some(b'/') => Ok('/'),
-            Some(b'b') => Ok('\u{0008}'),
-            Some(b'f') => Ok('\u{000C}'),
-            Some(b'n') => Ok('\n'),
-            Some(b'r') => Ok('\r'),
-            Some(b't') => Ok('\t'),
-            Some(b'u') => self.parse_unicode_escape(),
-            Some(_) => Err(self.error_at(self.position - 1, ParseErrorKind::InvalidEscape)),
-            None => Err(self.error(ParseErrorKind::UnexpectedEnd)),
-        }
-    }
-
-    fn parse_unicode_escape(&mut self) -> Result<char, ParseError> {
-        let cp = self.parse_hex4()?;
-
-        // High surrogate
-        if (0xD800..=0xDBFF).contains(&cp) {
-            // Verify that another \u follows immediately.
-            self.expect(b'\\')
-                .map_err(|_| self.error(ParseErrorKind::InvalidUnicodeEscape))?;
-            self.expect(b'u')
-                .map_err(|_| self.error(ParseErrorKind::InvalidUnicodeEscape))?;
-            let low = self.parse_hex4()?;
-            if !(0xDC00..=0xDFFF).contains(&low) {
-                return Err(self.error(ParseErrorKind::InvalidUnicodeEscape));
-            }
-            let combined = (cp - 0xD800) * 0x400 + (low - 0xDC00) + 0x10000;
-            char::from_u32(combined).ok_or_else(|| self.error(ParseErrorKind::InvalidUnicodeEscape))
-        } else if (0xDC00..=0xDFFF).contains(&cp) {
-            // Lone low surrogate
-            Err(self.error(ParseErrorKind::InvalidUnicodeEscape))
-        } else {
-            char::from_u32(cp).ok_or_else(|| self.error(ParseErrorKind::InvalidUnicodeEscape))
-        }
-    }
-
-    fn parse_hex4(&mut self) -> Result<u32, ParseError> {
-        let mut value: u32 = 0;
-        for _ in 0..4 {
-            let digit = match self.advance() {
-                Some(b @ b'0'..=b'9') => (b - b'0') as u32,
-                Some(b @ b'a'..=b'f') => (b - b'a' + 10) as u32,
-                Some(b @ b'A'..=b'F') => (b - b'A' + 10) as u32,
-                Some(_) => {
-                    return Err(
-                        self.error_at(self.position - 1, ParseErrorKind::InvalidUnicodeEscape)
-                    )
-                }
-                None => return Err(self.error(ParseErrorKind::InvalidUnicodeEscape)),
-            };
-            value = value * 16 + digit;
-        }
-        Ok(value)
-    }
-
-    fn parse_array(&mut self) -> Result<JsonValue, ParseError> {
-        self.expect(b'[')?;
-        self.depth += 1;
-        if self.depth > MAX_DEPTH {
-            return Err(self.error(ParseErrorKind::NestingTooDeep));
-        }
-
-        self.skip_whitespace();
-        if self.peek() == Some(b']') {
-            self.position += 1;
-            self.depth -= 1;
-            return Ok(JsonValue::Array(Vec::new()));
-        }
-
-        let mut items = Vec::new();
-        loop {
-            let value = self.parse_value()?;
-            items.push(value);
-            self.skip_whitespace();
-            match self.peek() {
-                Some(b',') => {
-                    self.position += 1;
-                }
-                Some(b']') => {
-                    self.position += 1;
-                    self.depth -= 1;
-                    return Ok(JsonValue::Array(items));
-                }
-                Some(b) => return Err(self.error(ParseErrorKind::UnexpectedCharacter(b))),
-                None => return Err(self.error(ParseErrorKind::UnexpectedEnd)),
-            }
-        }
-    }
-
-    fn parse_object(&mut self) -> Result<JsonValue, ParseError> {
-        self.expect(b'{')?;
-        self.depth += 1;
-        if self.depth > MAX_DEPTH {
-            return Err(self.error(ParseErrorKind::NestingTooDeep));
-        }
-
-        self.skip_whitespace();
-        if self.peek() == Some(b'}') {
-            self.position += 1;
-            self.depth -= 1;
-            return Ok(JsonValue::Object(Vec::new()));
-        }
-
-        let mut fields = Vec::new();
-        loop {
-            self.skip_whitespace();
-            if self.peek() != Some(b'"') {
-                return Err(match self.peek() {
-                    Some(b) => self.error(ParseErrorKind::UnexpectedCharacter(b)),
-                    None => self.error(ParseErrorKind::UnexpectedEnd),
-                });
-            }
-            let key = self.parse_string()?;
-            self.skip_whitespace();
-            self.expect(b':')?;
-            let value = self.parse_value()?;
-            fields.push((key, value));
-            self.skip_whitespace();
-            match self.peek() {
-                Some(b',') => {
-                    self.position += 1;
-                }
-                Some(b'}') => {
-                    self.position += 1;
-                    self.depth -= 1;
-                    return Ok(JsonValue::Object(fields));
-                }
-                Some(b) => return Err(self.error(ParseErrorKind::UnexpectedCharacter(b))),
-                None => return Err(self.error(ParseErrorKind::UnexpectedEnd)),
-            }
-        }
-    }
+    Ok(output)
 }
 
-/// Returns the UTF-8 character width from the first byte.
-fn utf8_char_width(b: u8) -> usize {
-    if b < 0x80 {
-        1
-    } else if (0xC2..=0xDF).contains(&b) {
-        2
-    } else if (0xE0..=0xEF).contains(&b) {
-        3
-    } else if (0xF0..=0xF4).contains(&b) {
-        4
-    } else {
-        0
-    }
-}
-
-fn is_valid_utf8_sequence(bytes: &[u8]) -> bool {
-    match bytes {
-        [first, second] => (0xC2..=0xDF).contains(first) && is_continuation_byte(*second),
-        [first, second, third] => {
-            (match *first {
-                0xE0 => (0xA0..=0xBF).contains(second),
-                0xE1..=0xEC | 0xEE..=0xEF => is_continuation_byte(*second),
-                0xED => (0x80..=0x9F).contains(second),
-                _ => false,
-            }) && is_continuation_byte(*third)
+fn owned(value: JsonRef<'_>) -> Result<JsonValue, ParseError> {
+    match value.kind() {
+        JsonKind::Null => Ok(JsonValue::Null),
+        JsonKind::Bool => Ok(JsonValue::Bool(value.raw() == "true")),
+        JsonKind::Number => value
+            .raw()
+            .parse::<f64>()
+            .map(JsonValue::Number)
+            .map_err(|_| ParseError {
+                kind: ParseErrorKind::InvalidNumber,
+                position: value.end,
+            }),
+        JsonKind::String => string(value).map(JsonValue::String),
+        JsonKind::Array => {
+            let mut items = Vec::new();
+            for item in JsonArrayItems::new(value) {
+                items.push(owned(item?)?);
+            }
+            Ok(JsonValue::Array(items))
         }
-        [first, second, third, fourth] => {
-            (match *first {
-                0xF0 => (0x90..=0xBF).contains(second),
-                0xF1..=0xF3 => is_continuation_byte(*second),
-                0xF4 => (0x80..=0x8F).contains(second),
-                _ => false,
-            }) && is_continuation_byte(*third)
-                && is_continuation_byte(*fourth)
+        JsonKind::Object => {
+            let mut fields = Vec::new();
+            for entry in JsonObjectEntries::new(value) {
+                let (key, value) = entry?;
+                fields.push((string(key)?, owned(value)?));
+            }
+            Ok(JsonValue::Object(fields))
         }
-        _ => false,
     }
-}
-
-fn is_continuation_byte(b: u8) -> bool {
-    (0x80..=0xBF).contains(&b)
 }
 
 #[cfg(test)]
@@ -479,7 +128,7 @@ mod tests {
     fn parses_deep_nesting_at_limit() {
         let mut input = vec![b'['; 128];
         input.extend(vec![b']'; 128]);
-        // The innermost value is an empty array. 128 levels is allowed.
+
         assert!(parse(&input).is_ok());
     }
 
@@ -514,7 +163,6 @@ mod tests {
 
     #[test]
     fn reports_leading_zero_numbers() {
-        // If digits follow 0, the parser consumes only 0 and leaves trailing content.
         assert_eq!(
             parse(b"01").unwrap_err().kind,
             ParseErrorKind::TrailingContent
@@ -695,7 +343,6 @@ mod tests {
 
     #[test]
     fn parses_multibyte_utf8_in_string() {
-        // A string containing raw UTF-8 bytes.
         assert_eq!(
             parse("\"日本語\"".as_bytes()),
             Ok(JsonValue::String(String::from("日本語")))
@@ -704,7 +351,6 @@ mod tests {
 
     #[test]
     fn reports_control_character_in_string() {
-        // 0x0A (newline) appears in the string without escaping.
         assert!(parse(b"\"hello\nworld\"").is_err());
     }
 

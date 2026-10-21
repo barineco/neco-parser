@@ -8,7 +8,7 @@
 
 - 要素名を順序付きマップのフィールドへ変換
 - 入れ子要素を再帰的に変換
-- テキスト内容を `null` / `bool` / `number` / `string` 値として解析
+- テキスト内容を null / bool / number / string 値として解析
 - 空要素を空文字列へ変換
 - バイト位置とメッセージを持つ `ParseError`
 
@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | 項目 | 説明 |
 |---|---|
 | `parse(input: &str) -> Result<XmlValue, ParseError>` | 対応する XML 部分集合の読み込み |
-| `XmlValue` | `Null`、 `Bool`、 `Number(f64)`、 `String`、 `List`、 順序付き `Map` |
+| `XmlValue` | 解析結果の値 ( バリアントは下記 ) |
 | `ParseError` | バイト位置とメッセージ |
+
+`XmlValue` のバリアント:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` ( 順序付き )
 
 ## 対応範囲
 
-設定データとして使うコンパクトな XML 要素木を扱います。 要素名をフィールドに写し、 順序を保持します。 名前空間、 DTD、 実体展開、 スキーマ検証は実装しません。
+設定データとして使うコンパクトな XML 要素木を対象とし、要素名をフィールドに写して順序を保持します。名前空間、DTD、実体展開、スキーマ検証からは独立した範囲です。
 
 ## ライセンス
 

@@ -11,7 +11,7 @@ impl KdlDocument {
     }
 }
 
-/// KDL v2 ノード。名前、エントリ群(argument + property)、子ノードを持つ。
+/// KDL v2 ノード。名前、エントリ群 (argument + property)、子ノードを持つ。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KdlNode {
     /// type annotation `(type)name`
@@ -66,12 +66,7 @@ impl KdlNode {
     }
 
     /// 最初の Argument エントリが文字列であればその参照を返す。
-    ///
-    /// ```
-    /// use neco_kdl::parse;
-    /// let doc = parse("name \"alice\"\n").unwrap();
-    /// assert_eq!(doc.nodes()[0].first_string_arg(), Some("alice"));
-    /// ```
+    #[doc = include_str!("../docs/examples/first-string-argument.md")]
     pub fn first_string_arg(&self) -> Option<&str> {
         self.first_arg().and_then(KdlValue::as_str)
     }
@@ -92,14 +87,8 @@ impl KdlNode {
         })
     }
 
-    /// 同名の最初の子ノードを返す。
-    ///
-    /// ```
-    /// use neco_kdl::parse;
-    /// let doc = parse("parent {\n    item \"a\"\n    item \"b\"\n}\n").unwrap();
-    /// let parent = &doc.nodes()[0];
-    /// assert_eq!(parent.find_child("item").and_then(|c| c.first_string_arg()), Some("a"));
-    /// ```
+    /// 同名の最初の子ノードを返す。`None` は一致なし。
+    #[doc = include_str!("../docs/examples/child-lookup.md")]
     pub fn find_child(&self, name: &str) -> Option<&KdlNode> {
         self.children.as_deref()?.iter().find(|c| c.name == name)
     }
@@ -140,7 +129,7 @@ impl KdlNode {
     }
 }
 
-/// ノードのエントリ。argument(位置引数)または property(名前付き引数)。
+/// ノードのエントリ。argument(位置引数) または property(名前付き引数)。
 #[derive(Debug, Clone, PartialEq)]
 pub enum KdlEntry {
     Argument {
@@ -352,11 +341,10 @@ impl KdlValue {
 /// KDL v2 は数値サイズに制限を置かないため、i64/f64 に収まらない値も受理する。
 #[derive(Debug, Clone)]
 pub struct KdlNumber {
-    /// 原文(アンダースコア・プレフィックス含む)
     pub(crate) raw: String,
-    /// 整数として解釈可能な場合
+
     pub(crate) as_i64: Option<i64>,
-    /// 浮動小数点として解釈可能な場合(#inf, #-inf, #nan 含む)
+
     pub(crate) as_f64: Option<f64>,
 }
 
@@ -398,21 +386,20 @@ impl PartialEq for KdlNumber {
 /// パースエラー。
 #[derive(Debug, Clone, PartialEq)]
 pub struct KdlError {
-    /// 1-based 行番号
     pub(crate) line: usize,
-    /// 1-based 列番号(Unicode scalar value 単位)
+
     pub(crate) col: usize,
-    /// エラー種別
+
     pub(crate) kind: KdlErrorKind,
 }
 
 impl KdlError {
-    /// 行番号(1-based)を返す。
+    /// 行番号 (1-based) を返す。
     pub fn line(&self) -> usize {
         self.line
     }
 
-    /// 列番号(1-based、Unicode scalar value 単位)を返す。
+    /// 列番号 (1-based、Unicode scalar value 単位) を返す。
     pub fn col(&self) -> usize {
         self.col
     }
@@ -444,7 +431,7 @@ pub enum KdlErrorKind {
     InvalidNumber,
     /// 禁止コードポイント
     DisallowedCodePoint(char),
-    /// 裸キーワード(true, false, null, inf, -inf, nan)
+    /// 裸キーワード (true, false, null, inf, -inf, nan)
     BareKeyword,
     /// ネストされていないブロックコメント終端
     UnmatchedBlockCommentEnd,
@@ -515,8 +502,6 @@ mod tests {
         assert_eq!(KdlNumber::new("-0.0", None, Some(0.0)), Err(NumberError));
     }
 
-    // --- KdlValue::as_str ---
-
     #[test]
     fn as_str_returns_some_for_string() {
         let v = KdlValue::String("hello".to_string());
@@ -528,8 +513,6 @@ mod tests {
         let v = KdlValue::Number(make_number("42", Some(42), Some(42.0)));
         assert_eq!(v.as_str(), None);
     }
-
-    // --- KdlValue::as_bool ---
 
     #[test]
     fn as_bool_returns_some_for_bool() {
@@ -543,8 +526,6 @@ mod tests {
         assert_eq!(v.as_bool(), None);
     }
 
-    // --- KdlValue::as_f64 ---
-
     #[test]
     fn as_f64_returns_some_for_number() {
         let v = KdlValue::Number(make_number("2.5", None, Some(2.5)));
@@ -555,8 +536,6 @@ mod tests {
     fn as_f64_returns_none_for_bool() {
         assert_eq!(KdlValue::Bool(true).as_f64(), None);
     }
-
-    // --- KdlValue::as_i64 ---
 
     #[test]
     fn as_i64_returns_some_for_integer() {
@@ -569,8 +548,6 @@ mod tests {
         let v = KdlValue::Number(make_number("2.5", None, Some(2.5)));
         assert_eq!(v.as_i64(), None);
     }
-
-    // --- KdlEntry::value ---
 
     #[test]
     fn entry_value_for_argument() {
@@ -590,8 +567,6 @@ mod tests {
         };
         assert_eq!(entry.value(), &KdlValue::Bool(true));
     }
-
-    // --- KdlNode::get ---
 
     #[test]
     fn node_get_returns_some_for_existing_key() {
@@ -631,8 +606,6 @@ mod tests {
         assert_eq!(node.get("missing"), None);
     }
 
-    // --- helpers for navigation tests ---
-
     fn arg(value: KdlValue) -> KdlEntry {
         KdlEntry::Argument { ty: None, value }
     }
@@ -669,8 +642,6 @@ mod tests {
         }
     }
 
-    // --- KdlNode::first_arg / first_string_arg ---
-
     #[test]
     fn first_arg_skips_property() {
         let n = node(
@@ -705,8 +676,6 @@ mod tests {
         );
         assert_eq!(n.first_string_arg(), None);
     }
-
-    // --- KdlNode::find_child / find_children ---
 
     #[test]
     fn find_child_returns_first_match() {
@@ -750,8 +719,6 @@ mod tests {
         let parent = node("p", vec![], Some(vec![node("a", vec![], None)]));
         assert_eq!(parent.find_children("z").count(), 0);
     }
-
-    // --- KdlNode::string_prop / bool_prop / int_prop ---
 
     #[test]
     fn string_prop_for_string_value() {
@@ -836,8 +803,6 @@ mod tests {
         assert_eq!(n.int_prop("absent"), None);
     }
 
-    // --- KdlNode::string_child_values ---
-
     #[test]
     fn string_child_values_collects_string_args() {
         let parent = node(
@@ -868,8 +833,6 @@ mod tests {
         );
         assert_eq!(parent.string_child_values("item"), vec!["a"]);
     }
-
-    // --- KdlEntry::ty ---
 
     #[test]
     fn entry_ty_for_typed_argument() {

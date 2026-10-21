@@ -1,73 +1,84 @@
 # neco-kdl-ast アーキテクチャ概要
 
+[English](overview-en.md)
+
 ## 位置付け
 
 ```mermaid
 graph TD
-    C1[利用者<br/>laplan 等]
-    C2[利用者<br/>neployer 等]
+    C1[利用者<br/>独自の marker を宣言]
     C3[利用者<br/>atproto SDK 等]
     CORE["neco-ast<br/>StructuredValue / StructuredNumber<br/>StructuredNode trait / StructuredDocument trait"]
     AST["neco-kdl-ast ( AST layer )<br/>NsidPath / CrossRef / StructuredName<br/>StructuredNode / Document<br/>KDL アクセサ群"]
     PAR["neco-kdl ( parser layer )<br/>KdlNode / KdlEntry / KdlValue / KdlDocument"]
     C1 --> AST
-    C2 --> AST
     C3 --> AST
     AST --> CORE
     AST --> PAR
 ```
 
-`neco-kdl` ( parser ) は KDL syntax を 論理構造 ( `KdlNode` の木 ) に落とす責務に閉じる。 `""` の有無等の表記差は parser 層で normalize され、 内部で等価扱いになる。
+`neco-kdl` ( parser、構文解析器 ) は、KDL の構文を論理構造 ( ノード の木 ) へ変換する役割に専念する。
+引用符の有無等の表記の違いは 構文解析層で正規化され、内部では同じ値として扱われる。
 
-`neco-kdl-ast` ( AST layer ) は parser の出力に 名前空間パス / 参照 / 構造化命名 / 手続きの入れ子表記の richer な抽象を載せる。 KDL を構造化 IR の入れ物として使う 利用者 ( laplan / neployer / atproto SDK 等 ) が共通に必要とする操作を集約し、共有 `neco-ast` trait も実装する。
+`neco-kdl-ast` ( AST layer、構文木の層 ) は構文解析器の出力の上に、名前空間・参照・構造化命名・手続きの
+入れ子という抽象を載せる。複数の利用者がこの共通の操作を使い、共有 trait も実装する。
+ここでいう名前空間パスは、ファイルシステム上のパス ( FS パス ) と相互変換できる。
 
-## parser 層と AST 層の責務 ( 2 層 framing )
+## 構文解析層と AST 層の責務 ( 2 層構成 )
 
-AST layer は **「parser + パラメータ化可能な normalizer」** の 2 層構造として位置付ける:
+AST layer は、「parser」と「設定に応じて動作を変えられる正規化機構 ( normalizer )」から成る 2 層構造として位置付けられる。
 
 | 層 | 責務 |
 |---|---|
-| `neco-kdl` ( parser ) | KDL syntax → 論理構造 ( `KdlNode` の木 )。 表記差 ( 引用の有無、 escape、 whitespace ) は normalize される。 native KDL 全要素を保持 |
-| `neco-kdl-ast` ( AST / パラメータ化可能な normalizer ) | 論理構造 + 利用者 が宣言する Convention で、 名前空間パス / 参照 / 構造化命名 / 手続きの入れ子 / 5 軸の同型変換 を提供 |
+| `neco-kdl` ( parser ) | KDL 構文を論理構造へ変換する。表記の違い ( 引用・escape・空白 ) は正規化し、全要素を保持する |
+| `neco-kdl-ast` ( AST 層、設定に応じて動作を変える正規化機構 ) | 論理構造と利用者が宣言する Convention を受け取り、名前空間パス / 参照 / 構造化命名 / 手続きの入れ子 / 5 軸の同型変換を提供する |
 
-`lex` / `app` / `integer` / `string` 等の **semantic keyword 自体は 利用者 領域**で、 AST layer はこれらに reserved word として特別な意味を持たせない。 ただし 利用者 が「この prefix は marker」 「この kind 名は marker」 を Convention 経由で declare すれば、 その意味論等価性を構造的 往復変換 として吸収する。
+kind 名や型名等、意味を持つ予約語 ( semantic keyword ) は利用者の領域に属し、AST 層はそれ自体に特別な意味を持たせない。
+利用者が特定の prefix や kind 名を marker と宣言した場合に限り、AST 層はその等価性を構造的な往復変換として扱う。
 
-表記差に semantic を持たせたい 利用者 が現れた場合、 その責務は AST 層が パラメータ化可能な normalizer として引き受ける ( 詳細は [reference/syntax § Convention と Marker](../reference/syntax.md) )。 raw form 保持系 API は現状提供しない。
+表記の違いに独自の意味を持たせたい利用者が現れた場合、その役割は AST 層が設定に応じて動作を変える正規化機構として引き受ける。
+詳細は [reference/syntax](../reference/syntax.md) の Convention と Marker の節を参照。
+変換前の表記をそのまま保持する API は、現状は提供していない。
 
-`Convention` には marker reserved word の list に加えて軸 1-5 ごとの **正規形宣言** ( `AxisForm` / `PropertyChildForm` ) を持たせ、 `Document::render_as(&Convention) -> Document` がその宣言に従って軸 5 → 4 → 1 → 2 → 3 順 ( marker 境界保護順 ) で per-axis 変換を orchestrate する ( 詳細は [reference/syntax § Convention の正規形宣言](../reference/syntax.md) )。 既定 `Convention` は全軸 `Off` で、 既存 read accessor の振る舞いを完全互換に保つ ( downstream 追従ゼロ )。
+`Convention` は marker の一覧に加え、軸 1 から軸 5 までの正規形宣言を持つ。
+`render_as` はこの宣言に従い、軸 5・4・1・2・3 の順 ( marker 境界を保護する順序 ) で軸ごとの変換を適用する ( 詳細は [reference/syntax](../reference/syntax.md) を参照 )。
+既定の `Convention` は全軸が off であり、この場合 `render_as` は恒等変換になる。
 
-## 利用 利用者 と 主要な KDL 表現
+## 利用者と主要な KDL 表現
 
-AST layer は次の 3 種類の使われ方をする:
+AST 層は、利用者が宣言する `Convention` と marker によって、呼び出し元ごとに異なる語彙を扱えるように設計されている。
+kind 名や prefix の具体的な意味は利用者が決め、AST 層はその対応を構造的な往復変換として扱う。
 
-| 利用者 | 主要 KDL 表現 | 特徴 |
-|---|---|---|
-| laplan ( `.lex` ) | `lex` / `cratis` / `morph` / `morph.derives` / `func.family` / `law` / `inverse` / `dual` / `handler` / `chain` / `import` / `lexicon` / `face` | dotted node 名 ( form Y )、 nsid identifier 多用、 参照 に `#fragment` |
-| neployer ( `config.kdl` ) | `app` / `target` / `package` / `service` / `bindings` / `produces` / `accepts` / `meta` / `palette` | flat node 名 ( form X )、 fact key で nsid 散発、 参照 に fragment 不要 |
-| atproto ( Lexicon JSON の KDL projection ) | `lexicon` ( form Y )、 内部に `params` / `output` / `defs` 等 | type annotation `(T)V` 頻発、 参照 に `<nsid>#<defName>` 形式の fragment |
+atproto Lexicon を KDL へ変換した表現は、軸 4 ( 型注釈 ) と軸 5 ( kind キーワード ) を多用する、公開された利用例である。
+詳細は reference/syntax の具体例を参照。
 
-3 者の共通基盤 ( namespace + 参照 + 構造化命名 ) を AST layer が引き受け、 各 利用者 は domain 固有の解釈のみ書く。
+利用者は、AST 層が提供する共通の基盤を使いながら、自分の語彙を marker として宣言できる。
 
 ## 共有構造参照
 
-共有構造参照は `neco-ast` が担う。`StructuredValue<'a>` は null / bool / number / string / sequence / mapping の値木を表し、`StructuredNumber<'a>` は raw 文字列表現と `f64` 解釈結果を同時に保持する。`StructuredNode<'a>` と `StructuredDocument<'a>` は形式別の値を node と文書として読む trait である。
+共有構造参照は `neco-ast` crate が担う。
+`StructuredValue<'a>` は null・bool・number・string・sequence・mapping の値木を表す。
+`StructuredNumber<'a>` は、元の文字列表現と `f64` への解釈結果を同時に保持する。
+`StructuredNode<'a>` と `StructuredDocument<'a>` は、形式別の値を ノード と文書として読む trait である。
 
-`neco-kdl-ast` は KDL 固有の `NsidPath` / `CrossRef` / layout 判定 / dot-chain アクセサ群 を保持しつつ、`Document` と `StructuredNode<'a>` に `neco-ast` の共有 trait を実装する。JSON / TOML / YAML / JSON5 / XML / plist は各 `*-ast` crate が同じ trait を実装する。
+`neco-kdl-ast` は、KDL 固有の NsidPath・CrossRef・layout 判定・dot-chain アクセサ群を保持する。
+`Document` と `StructuredNode<'a>` に neco-ast の共有 trait を実装する。
+JSON・TOML・YAML・JSON5・XML・plist の各 `*-ast` crate も同じ trait を実装する。
 
 ## 主要型
 
 | 型 | 役割 |
 |---|---|
-| `NsidPath` | dot-separated 名前空間パス、 segment 列。 FS path への双方向 mapping を提供 |
-| `CrossRef` | 別 entity への参照、 `<NsidPath>#<fragment>` の 3 形式を吸収 |
-| `StructuredName` | `{ kind: Option<NsidPath>, identifier: NsidPath }`、 form X / form Y を統一表現 |
-| `StructuredNode<'a>` | `KdlNode` の borrowed view + kind / identifier / 入れ子 depth 解釈 |
-| `Document` | `KdlDocument` の owned wrapper + 索引 / resolve / 往復変換 + `render_as(&Convention) -> Document` |
-| `Convention` | 利用者宣言の marker list + 軸 1-5 の per-axis 正規形宣言 ( `AxisForm` / `PropertyChildForm` ) |
-| `AxisForm` | 軸 1 / 2 / 4 / 5 用 enum: `Off` / `Expand` / `Collapse` / `ExpandWithMarker(Marker)` / `CollapseWithMarker(Marker)` |
-| `PropertyChildForm` | 軸 3 専用 enum: `Off` / `Expand` / `Collapse` ( 融合形のみ、 enum axiom ) |
-| `StructuredFacade<'a>` | 既存 KDL 利用者向けに保持する 5 method trait |
+| `NsidPath` | dot 区切りの名前空間パス、segment の列。FS パス との双方向変換を提供 |
+| `CrossRef` | 別の対象 への参照、`<NsidPath>#<fragment>` の 3 形式を吸収 |
+| `StructuredName` | 種類・識別子の対、form X・form Y を統一表現 |
+| `StructuredNode<'a>` | `KdlNode` の borrowed view ( 借用ビュー )、種類・識別子・入れ子深さを解釈 |
+| `Document` | KdlDocument を所有するラッパー型、索引・resolve・往復変換・render_as を提供 |
+| `Convention` | 利用者が宣言する marker の一覧と、軸 1-5 の軸ごとの正規形宣言 |
+| `AxisForm` | 軸 1・2・4・5 用 enum ( off・展開・畳込み・marker 付き展開・marker 付き畳込み ) |
+| `PropertyChildForm` | 軸 3 専用 enum ( off・展開・畳込みの 3 種類に限られる構造的制約を持つ ) |
+| `StructuredFacade<'a>` | 既存 KDL 利用者向けに保持する、5 つの メソッド から成る trait |
 | `neco_ast::StructuredNode<'a>` | `StructuredNode<'a>` が実装する共有構造参照 trait |
 | `neco_ast::StructuredDocument<'a>` | `Document` が実装する共有文書 trait |
 
-詳細な構文と worked example は [reference/syntax](../reference/syntax.md) を参照。
+詳細な構文と具体例は [reference/syntax](../reference/syntax.md) を参照。

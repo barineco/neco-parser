@@ -9,7 +9,7 @@
 - XML 形式の plist 辞書を順序付きマップへ変換
 - 入れ子の XML 要素を再帰的に変換
 - 空の XML 要素を空文字列へ変換
-- `null` / `bool` / `number` / `string` のスカラー解析
+- null / bool / number / string のスカラー解析
 - バイト位置とメッセージを持つ `ParseError`
 
 ## 使い方
@@ -40,12 +40,22 @@ assert!(fields.iter().any(|(key, value)| {
 | 項目 | 説明 |
 |---|---|
 | `parse(input: &str) -> Result<PlistValue, ParseError>` | 対応する plist XML 部分集合の読み込み |
-| `PlistValue` | `Null`、 `Bool`、 `Number(f64)`、 `String`、 `List`、 順序付き `Map` |
+| `PlistValue` | 解析結果の値 ( バリアントは下記 ) |
 | `ParseError` | バイト位置とメッセージ |
+
+`PlistValue` のバリアント:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` ( 順序付き )
 
 ## 対応範囲
 
-設定データとして使う軽量な XML `property-list` 形を扱います。 要素名をフィールドに写し、 フィールド順序を保持します。 バイナリ plist と Apple plist の意味論全体は、 この最小部分集合 crate では扱いません。
+設定データとして使う軽量な XML `property-list` 形を対象とし、要素名をフィールドに写してフィールド順序を保持します。
+バイナリ plist と Apple plist の意味論全体からは独立した最小部分集合です。
 
 ## ライセンス
 

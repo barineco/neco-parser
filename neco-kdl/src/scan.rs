@@ -1,4 +1,3 @@
-/// UTF-8 文字列のスキャナー。位置は byte offset から line_col で導出する。
 pub(crate) struct Scanner<'a> {
     input: &'a str,
     chars: core::str::CharIndices<'a>,
@@ -46,12 +45,10 @@ impl<'a> Scanner<'a> {
         self.current.is_none()
     }
 
-    /// 現在の byte offset を位置とする error を作る。
     pub(crate) fn make_error(&self, kind: crate::KdlErrorKind) -> crate::KdlError {
         self.make_error_at(self.byte_offset(), kind)
     }
 
-    /// 指定した byte offset を位置とする error を作る。行と列は `line_col` から導出する。
     pub(crate) fn make_error_at(
         &self,
         offset: usize,
@@ -78,7 +75,6 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    /// 改行シーケンスを消費する。CRLF は単一の改行として扱う。
     pub(crate) fn consume_newline(&mut self) -> bool {
         match self.peek() {
             Some(ch) if is_newline(ch) => {
@@ -93,7 +89,6 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    /// 現在位置を保存する。backtrack 用。
     pub(crate) fn save(&self) -> ScannerState<'a> {
         ScannerState {
             chars: self.chars.clone(),
@@ -102,7 +97,6 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    /// 保存した位置に戻る。
     pub(crate) fn restore(&mut self, state: ScannerState<'a>) {
         self.chars = state.chars;
         self.current = state.current;
@@ -136,14 +130,12 @@ pub fn line_col(input: &str, offset: usize) -> Option<(usize, usize)> {
     let bytes = input.as_bytes();
 
     while index < offset {
-        // index は常に char 境界にある。
         let ch = input[index..].chars().next().unwrap();
         let len = ch.len_utf8();
 
         if is_newline(ch) {
             if ch == '\r' && bytes.get(index + len) == Some(&b'\n') {
                 if offset == index + len {
-                    // CR と LF の間の offset は前の行に属する。
                     return Some((line, col + 1));
                 }
                 line += 1;
@@ -164,7 +156,6 @@ pub fn line_col(input: &str, offset: usize) -> Option<(usize, usize)> {
     Some((line, col))
 }
 
-/// KDL v2 の Unicode whitespace(改行を含まない)。18 文字。
 pub(crate) fn is_unicode_space(ch: char) -> bool {
     matches!(
         ch,
@@ -173,7 +164,6 @@ pub(crate) fn is_unicode_space(ch: char) -> bool {
     )
 }
 
-/// KDL v2 の改行文字。
 pub(crate) fn is_newline(ch: char) -> bool {
     matches!(
         ch,
@@ -181,8 +171,6 @@ pub(crate) fn is_newline(ch: char) -> bool {
     )
 }
 
-/// 禁止リテラルコードポイント。
-/// BOM (U+FEFF) はここでは常に true。先頭の BOM は skip_bom() で処理。
 pub(crate) fn is_disallowed(ch: char) -> bool {
     matches!(
         ch,
@@ -196,7 +184,6 @@ pub(crate) fn is_disallowed(ch: char) -> bool {
     )
 }
 
-/// KDL v2 の identifier-char。
 pub(crate) fn is_identifier_char(ch: char) -> bool {
     !is_unicode_space(ch)
         && !is_newline(ch)
@@ -336,20 +323,20 @@ mod tests {
     fn line_col_folds_crlf_and_rejects_interior_offsets() {
         let input = "ab\r\ncd";
         assert_eq!(line_col(input, 0), Some((1, 1)));
-        assert_eq!(line_col(input, 2), Some((1, 3))); // CR は前の行
-        assert_eq!(line_col(input, 3), Some((1, 4))); // CR と LF の間は前の行
-        assert_eq!(line_col(input, 4), Some((2, 1))); // LF の消費直後
+        assert_eq!(line_col(input, 2), Some((1, 3)));
+        assert_eq!(line_col(input, 3), Some((1, 4)));
+        assert_eq!(line_col(input, 4), Some((2, 1)));
         assert_eq!(line_col(input, 5), Some((2, 2)));
-        assert_eq!(line_col(input, 6), Some((2, 3))); // 末尾 offset
-        assert_eq!(line_col(input, 7), None); // 範囲外
+        assert_eq!(line_col(input, 6), Some((2, 3)));
+        assert_eq!(line_col(input, 7), None);
     }
 
     #[test]
     fn line_col_rejects_offset_inside_multibyte_char() {
         let input = "π";
         assert_eq!(line_col(input, 0), Some((1, 1)));
-        assert_eq!(line_col(input, 1), None); // π の途中
-        assert_eq!(line_col(input, 2), Some((1, 2))); // 末尾
+        assert_eq!(line_col(input, 1), None);
+        assert_eq!(line_col(input, 2), Some((1, 2)));
     }
 
     #[test]

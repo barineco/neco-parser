@@ -2,15 +2,20 @@
 
 [English](README.md)
 
-`neco-plist-ast` は plist の値を共有 `neco-ast` trait で読むための crate です。
+`neco-plist-ast` は plist の値を共有 `neco-ast` trait で読むためのライブラリです。
 
 ## 機能
 
 - `PlistValue` を保持する所有 `PlistDocument`
-- 任意のフィールドキーを持つ借用 `PlistNode<'a>`
-- `&str` を `PlistDocument` に包む `parse` 再エクスポート
+- 省略可能なフィールドキーを持つ借用 `PlistNode<'a>`
+- 文字列を `PlistDocument` に包む `parse` 再エクスポート
 - 上位のマッピングフィールドをノード列として返す `StructuredDocument` 実装
-- 値型に対する `kind` / `identifier` / `attribute` / `children` / `value` を提供する `StructuredNode` 実装
+- `StructuredNode` 実装が提供するアクセサ:
+  - `kind`
+  - `identifier`
+  - `attribute`
+  - `children`
+  - `value`
 
 ## 使い方
 
@@ -26,13 +31,20 @@ assert_eq!(node.kind(), "name");
 
 | 項目 | 説明 |
 |---|---|
-| `parse(input: &str) -> Result<PlistDocument, ParseError>` | `neco-plist` で解析し `PlistDocument` で包む |
+| `parse(input: &str) -> Result<PlistDocument, ParseError>` | `neco-plist` で解析して包む |
 | `PlistDocument` | `PlistValue` を保持する所有ラッパー |
-| `PlistNode<'a>` | 任意のフィールドキーを持つ借用ビュー |
-| `PlistDocument::from_value` / `as_value` | 内部 `PlistValue` の生成と参照 |
-| `PlistNode::from_value` / `as_value` | 根ビューの生成と内部 `PlistValue` の参照 |
-| `impl StructuredDocument for PlistDocument` | `nodes()` がマッピングフィールドを返す ( 非マッピングは根単体 ) |
-| `impl StructuredNode for PlistNode<'_>` | `kind` / `identifier` / `attribute` / `children` / `value` を実装 |
+| `PlistNode<'a>` | 省略可能なフィールドキーを持つ借用ビュー |
+| `PlistDocument::from_value` / `as_value` | 内部 PlistValue の生成と参照 |
+| `PlistNode::from_value` / `as_value` | 根ビューの生成と内部 PlistValue の参照 |
+| `impl StructuredDocument for PlistDocument` | マッピングフィールドを返す ( 非マッピングは根単体 ) |
+
+`impl StructuredNode for PlistNode<'_>` が実装するアクセサ:
+
+- `kind`
+- `identifier`
+- `attribute`
+- `children`
+- `value`
 
 ## ライセンス
 

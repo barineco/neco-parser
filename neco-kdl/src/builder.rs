@@ -1,4 +1,4 @@
-//! KDL ノード / ドキュメントを method chain で組み立てる Builder API。
+//! KDL のノードとドキュメントをメソッドチェーンで組み立てる builder 群。
 
 use crate::value::{KdlDocument, KdlEntry, KdlNode, KdlNumber, KdlValue};
 
@@ -170,30 +170,18 @@ impl Default for KdlDocumentBuilder {
 }
 
 impl KdlNode {
-    /// 指定名の `KdlNodeBuilder` を返す。
-    ///
-    /// ```
-    /// use neco_kdl::KdlNode;
-    /// let n = KdlNode::builder("greet").string_arg("hello").build();
-    /// assert_eq!(n.name(), "greet");
-    /// assert_eq!(n.first_string_arg(), Some("hello"));
-    /// ```
+    /// 指定名の `KdlNodeBuilder` を返す。`string_arg` などの追加メソッドで entry を積み、
+    /// `build()` で `KdlNode` を得る。
+    #[doc = include_str!("../docs/examples/node-builder.md")]
     pub fn builder(name: impl Into<String>) -> KdlNodeBuilder {
         KdlNodeBuilder::new(name)
     }
 }
 
 impl KdlDocument {
-    /// 空の `KdlDocumentBuilder` を返す。
-    ///
-    /// ```
-    /// use neco_kdl::{KdlDocument, KdlNode};
-    /// let doc = KdlDocument::builder()
-    ///     .node(KdlNode::builder("alpha").build())
-    ///     .node(KdlNode::builder("beta").build())
-    ///     .build();
-    /// assert_eq!(doc.nodes().len(), 2);
-    /// ```
+    /// 空の `KdlDocumentBuilder` を返す。`node()` の連結でノードを追加し、
+    /// `build()` で `KdlDocument` を得る。
+    #[doc = include_str!("../docs/examples/document-builder.md")]
     pub fn builder() -> KdlDocumentBuilder {
         KdlDocumentBuilder::new()
     }
@@ -326,7 +314,6 @@ mod tests {
         let parsed = parse(input).expect("parse");
         let original_serialized = serialize(&parsed);
 
-        // builder で再構築
         let rebuilt = KdlDocument::builder()
             .node(
                 KdlNode::builder("node1")
@@ -354,7 +341,6 @@ mod tests {
         let rebuilt_serialized = serialize(&rebuilt);
         assert_eq!(rebuilt_serialized, original_serialized);
 
-        // 再 parse して構造一致を確認
         let reparsed = parse(&rebuilt_serialized).expect("reparse");
         assert_eq!(reparsed, parsed);
     }

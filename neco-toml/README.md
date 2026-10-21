@@ -40,12 +40,21 @@ assert!(fields.iter().any(|(key, value)| {
 | Item | Description |
 |---|---|
 | `parse(input: &str) -> Result<TomlValue, ParseError>` | Parses the supported TOML subset |
-| `TomlValue` | `Null`, `Bool`, `Number(f64)`, `String`, `List`, or ordered `Map` |
+| `TomlValue` | Parsed value, one of the variants below |
 | `ParseError` | Reports line position and message |
+
+`TomlValue` variants:
+
+- `Null`
+- `Bool`
+- `Number(f64)`
+- `String`
+- `List`
+- `Map` (ordered)
 
 ## Format support
 
-The supported subset covers flat configuration-shaped TOML with scalar values and simple arrays. It preserves duplicate keys in source order and does not implement the full TOML v1.0 grammar.
+The supported subset covers flat configuration-shaped TOML with scalar values and simple arrays. It preserves duplicate keys in source order, implementing this subset of the TOML v1.0 grammar.
 
 ## License
 

@@ -10,13 +10,13 @@ zero dependency KDL v2 parser, serializer, and document builder.
   - Multiline strings, raw strings, escline
   - Type annotations: `(type)node`
   - Slashdash comments (`/-`), block comments (`/* ... */`), nested comments
-  - `#true` / `#false` / `#null` / `#inf` / `#-inf` / `#nan` keywords
+  - Keyword literals: #true, #false, #null, #inf, #-inf, #nan
   - Hex, octal, binary literals with underscore separators
   - Version marker (`/- kdl-version 2`)
 - Positional parse tree via `parse_spanned()` with a UTF-8 byte span per node and entry
 - Serialization via `serialize()` and `Display` impl (roundtrip-safe)
 - Normalized output (matches official test suite `expected_kdl`)
-- Format-agnostic `Value` conversion (`Value` <-> `KdlDocument`)
+- Format-agnostic `Value` conversion, bridging to and from `KdlDocument`
 - Zero external dependencies
 - Passes the full official test suite
 
@@ -121,7 +121,7 @@ Derives a 1-based line and column from a byte offset. Returns `None` for an out-
 pub fn serialize(doc: &KdlDocument) -> String
 ```
 
-Converts a `KdlDocument` back to KDL text. All types (`KdlDocument`, `KdlNode`, `KdlEntry`, `KdlValue`) also implement `Display`.
+Converts a `KdlDocument` back to KDL text. All four node and value types implement `Display`.
 
 ### `normalize`
 
@@ -147,7 +147,7 @@ pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, ValueError>
 pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, ValueError>
 ```
 
-Converts between `KdlDocument` and a format-agnostic `Value` enum. `Value` serves as an intermediate representation for bridging KDL with other formats (JSON, CBOR, etc.) without external dependencies.
+Converts between `KdlDocument` and a format-agnostic `Value` enum, usable as an intermediate representation for bridging KDL with formats such as JSON or CBOR without external dependencies.
 
 Conversion preserves an empty Object as an empty children block. Seven typed reasons describe unsupported or lossy inputs:
 
@@ -176,18 +176,18 @@ impl KdlNumber {
 | Item | Description |
 |------|-------------|
 | `KdlDocument` | Parse result root. Access nodes via `nodes()` |
-| `KdlNode` | Node with `ty()`, `name()`, `entries()`, `children()` accessors |
-| `KdlEntry` | `Argument` (positional) or `Property` (named) |
+| `KdlNode` | Node with ty(), name(), entries(), children() accessors |
+| `KdlEntry` | Argument (positional) or Property (named) |
 | `KdlSpan` | Half-open UTF-8 byte range with public offset fields |
 | `SpannedKdlDocument` | Spanned document root, convertible to a plain document |
 | `SpannedKdlNode` | Spanned node carrying a span and the plain node view |
 | `SpannedKdlEntry` | Spanned entry carrying a span and the plain entry view |
-| `KdlValue` | `String(String)`, `Number(KdlNumber)`, `Bool(bool)`, `Null` |
+| `KdlValue` | String(String), Number(KdlNumber), Bool(bool), Null |
 | `KdlNumber` | Validated raw number with optional integer and floating-point interpretations |
 | `NumberError` | Raw syntax and interpreted value mismatch |
-| `KdlError` | Error with `line()`, `col()` (1-based), `kind()` |
-| `KdlErrorKind` | Error variant: `UnexpectedChar`, `InvalidEscape`, `UnclosedString`, etc. |
-| `Value` | Format-agnostic intermediate: `Null`, `Bool`, `Integer`, `Float`, `String`, `Array`, `Object` |
+| `KdlError` | Error with line(), col() (1-based), kind() |
+| `KdlErrorKind` | Error variant: UnexpectedChar, InvalidEscape, UnclosedString, etc. |
+| `Value` | Format-agnostic intermediate: Null, Bool, Integer, Float, String, Array, Object |
 | `ValueError` | Value conversion error containing a `ValueErrorReason` |
 | `ValueErrorReason` | Seven explicit rejection reasons for unsupported or lossy conversions |
 

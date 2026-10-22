@@ -1,63 +1,66 @@
-/// KDL v2 ドキュメント。ゼロ個以上のノードで構成される。
+/// A KDL v2 document consisting of zero or more nodes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KdlDocument {
     pub nodes: Vec<KdlNode>,
 }
 
 impl KdlDocument {
-    /// ドキュメント内のノード一覧を返す。
+    /// Returns the nodes in this document.
     pub fn nodes(&self) -> &[KdlNode] {
         &self.nodes
     }
 }
 
-/// KDL v2 ノード。名前、エントリ群 (argument + property)、子ノードを持つ。
+/// A KDL v2 node with an optional type annotation, a name, entries, and optional child nodes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KdlNode {
-    /// type annotation `(type)name`
+    /// Optional type annotation `(type)name`.
     pub ty: Option<String>,
-    /// ノード名
+    /// Node name.
     pub name: String,
-    /// argument と property を出現順で保持
+    /// Arguments and properties in source order.
     pub entries: Vec<KdlEntry>,
-    /// children block `{ ... }`
+    /// Child nodes from a `{ ... }` block.
     pub children: Option<Vec<KdlNode>>,
 }
 
 impl KdlNode {
-    /// type annotation を返す。
+    /// Returns the type annotation.
     pub fn ty(&self) -> Option<&str> {
         self.ty.as_deref()
     }
 
-    /// ノード名を返す。
+    /// Returns the node name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// エントリ一覧を返す。
+    /// Returns the entries.
     pub fn entries(&self) -> &[KdlEntry] {
         &self.entries
     }
 
-    /// 子ノードを返す。
+    /// Returns the child nodes.
     pub fn children(&self) -> Option<&[KdlNode]> {
         self.children.as_deref()
     }
 }
 
 impl KdlNode {
-    /// named property を key で検索し、最初にマッチした値を返す。
+    pub(crate) fn property_entry(&self, key: &str) -> Option<&KdlEntry> {
+        self.entries.iter().rev().find(
+            |entry| matches!(entry, KdlEntry::Property { key: candidate, .. } if candidate == key),
+        )
+    }
+
+    /// Looks up a named property by `key` and returns the rightmost value.
     pub fn get(&self, key: &str) -> Option<&KdlValue> {
-        self.entries().iter().find_map(|entry| match entry {
-            KdlEntry::Property { key: k, value, .. } if k == key => Some(value),
-            _ => None,
-        })
+        self.property_entry(key).map(KdlEntry::value)
     }
 }
 
 impl KdlNode {
-    /// 最初の Argument エントリの値を返す。 Property は skip する。
+    /// Returns the value of the first argument entry, skipping properties.
     pub fn first_arg(&self) -> Option<&KdlValue> {
         self.entries.iter().find_map(|e| match e {
             KdlEntry::Argument { value, .. } => Some(value),
@@ -65,13 +68,13 @@ impl KdlNode {
         })
     }
 
-    /// 最初の Argument エントリが文字列であればその参照を返す。
+    /// Returns the first argument as a string slice if it is a string.
     #[doc = include_str!("../docs/examples/first-string-argument.md")]
     pub fn first_string_arg(&self) -> Option<&str> {
         self.first_arg().and_then(KdlValue::as_str)
     }
 
-    /// Argument エントリのうち文字列値だけを出現順で返す。
+    /// Iterates over the string values of argument entries in order.
     pub fn string_args(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().filter_map(|entry| match entry {
             KdlEntry::Argument { value, .. } => value.as_str(),
@@ -79,7 +82,7 @@ impl KdlNode {
         })
     }
 
-    /// Argument エントリの値を出現順で返す。
+    /// Iterates over the values of argument entries in order.
     pub fn arg_values(&self) -> impl Iterator<Item = &KdlValue> {
         self.entries.iter().filter_map(|entry| match entry {
             KdlEntry::Argument { value, .. } => Some(value),
@@ -87,13 +90,13 @@ impl KdlNode {
         })
     }
 
-    /// 同名の最初の子ノードを返す。`None` は一致なし。
+    /// Returns the first child node with the given `name`, or `None` if not found.
     #[doc = include_str!("../docs/examples/child-lookup.md")]
     pub fn find_child(&self, name: &str) -> Option<&KdlNode> {
         self.children.as_deref()?.iter().find(|c| c.name == name)
     }
 
-    /// 同名の子ノードをすべて返す iterator。
+    /// Returns an iterator over all child nodes with the given `name`.
     pub fn find_children<'s>(&'s self, name: &'s str) -> impl Iterator<Item = &'s KdlNode> + 's {
         self.children
             .as_deref()
@@ -102,22 +105,22 @@ impl KdlNode {
             .filter(move |c| c.name == name)
     }
 
-    /// 名前付き property を文字列として返す。
+    /// Returns the value of the named property `key` as a string slice.
     pub fn string_prop(&self, key: &str) -> Option<&str> {
         self.get(key).and_then(KdlValue::as_str)
     }
 
-    /// 名前付き property を bool として返す。
+    /// Returns the value of the named property `key` as a `bool`.
     pub fn bool_prop(&self, key: &str) -> Option<bool> {
         self.get(key).and_then(KdlValue::as_bool)
     }
 
-    /// 名前付き property を i64 として返す。
+    /// Returns the value of the named property `key` as an `i64`.
     pub fn int_prop(&self, key: &str) -> Option<i64> {
         self.get(key).and_then(KdlValue::as_i64)
     }
 
-    /// 同名子ノードのうち first_string_arg が取れるものを集める。
+    /// Collects `first_string_arg` from all child nodes named `child_name`.
     pub fn string_child_values(&self, child_name: &str) -> Vec<&str> {
         self.children
             .as_deref()
@@ -129,7 +132,7 @@ impl KdlNode {
     }
 }
 
-/// ノードのエントリ。argument(位置引数) または property(名前付き引数)。
+/// A node entry: either a positional argument or a named property.
 #[derive(Debug, Clone, PartialEq)]
 pub enum KdlEntry {
     Argument {
@@ -144,7 +147,7 @@ pub enum KdlEntry {
 }
 
 impl KdlEntry {
-    /// エントリの値を返す。
+    /// Returns the entry value.
     pub fn value(&self) -> &KdlValue {
         match self {
             KdlEntry::Argument { value, .. } => value,
@@ -152,7 +155,7 @@ impl KdlEntry {
         }
     }
 
-    /// エントリの type annotation を返す。
+    /// Returns the type annotation of this entry.
     pub fn ty(&self) -> Option<&str> {
         match self {
             KdlEntry::Argument { ty, .. } | KdlEntry::Property { ty, .. } => ty.as_deref(),
@@ -160,16 +163,16 @@ impl KdlEntry {
     }
 }
 
-/// 入力 UTF-8 byte 列の半開区間。source 由来の位置だけを表す。
+/// A half-open UTF-8 byte range in the source input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KdlSpan {
-    /// 開始 byte offset ( この位置を含む )
+    /// Inclusive start byte offset.
     pub start: usize,
-    /// 終了 byte offset ( この位置を含まない )
+    /// Exclusive end byte offset.
     pub end: usize,
 }
 
-/// source span を伴う KDL v2 ドキュメント。生成入口は parse_spanned だけである。
+/// A KDL v2 document with source spans, returned by [`crate::parse_spanned`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpannedKdlDocument {
     nodes: Vec<SpannedKdlNode>,
@@ -180,12 +183,12 @@ impl SpannedKdlDocument {
         Self { nodes }
     }
 
-    /// ドキュメント内の位置付きノード一覧を返す。
+    /// Returns the spanned nodes in this document.
     pub fn nodes(&self) -> &[SpannedKdlNode] {
         &self.nodes
     }
 
-    /// source 由来の span を除去し通常の `KdlDocument` へ変換する一方向の変換。
+    /// Strips source spans and converts this document into a [`KdlDocument`].
     pub fn into_document(self) -> KdlDocument {
         KdlDocument {
             nodes: self
@@ -197,7 +200,7 @@ impl SpannedKdlDocument {
     }
 }
 
-/// source span を伴う KDL v2 ノード。境界の規則は README に記す。
+/// A KDL v2 node paired with its source span. See the crate README (`parse_spanned`) for span boundary rules.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpannedKdlNode {
     span: KdlSpan,
@@ -224,32 +227,32 @@ impl SpannedKdlNode {
         }
     }
 
-    /// ノードの source span を返す。
+    /// Returns the source span of this node.
     pub fn span(&self) -> KdlSpan {
         self.span
     }
 
-    /// type annotation を返す。
+    /// Returns the type annotation.
     pub fn ty(&self) -> Option<&str> {
         self.ty.as_deref()
     }
 
-    /// ノード名を返す。
+    /// Returns the node name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// 位置付きエントリ一覧を返す。
+    /// Returns the spanned entries.
     pub fn entries(&self) -> &[SpannedKdlEntry] {
         &self.entries
     }
 
-    /// 位置付き子ノードを返す。
+    /// Returns the spanned child nodes.
     pub fn children(&self) -> Option<&[SpannedKdlNode]> {
         self.children.as_deref()
     }
 
-    /// source 由来の span を除去し通常の `KdlNode` へ変換する。
+    /// Strips source spans and converts this node into a [`KdlNode`].
     pub fn into_node(self) -> KdlNode {
         KdlNode {
             ty: self.ty,
@@ -266,7 +269,7 @@ impl SpannedKdlNode {
     }
 }
 
-/// source span を伴う KDL v2 エントリ。境界の規則は README に記す。
+/// A KDL v2 entry paired with its source span. See the crate README (`parse_spanned`) for span boundary rules.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpannedKdlEntry {
     span: KdlSpan,
@@ -278,12 +281,12 @@ impl SpannedKdlEntry {
         Self { span, entry }
     }
 
-    /// エントリの source span を返す。
+    /// Returns the source span of this entry.
     pub fn span(&self) -> KdlSpan {
         self.span
     }
 
-    /// 通常のエントリ値を返す。
+    /// Returns the underlying [`KdlEntry`].
     pub fn entry(&self) -> &KdlEntry {
         &self.entry
     }
@@ -293,7 +296,7 @@ impl SpannedKdlEntry {
     }
 }
 
-/// KDL v2 の値。
+/// A KDL v2 value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum KdlValue {
     String(String),
@@ -303,7 +306,7 @@ pub enum KdlValue {
 }
 
 impl KdlValue {
-    /// 文字列値を返す。
+    /// Returns the string slice if this value is a `String`.
     pub fn as_str(&self) -> Option<&str> {
         match self {
             KdlValue::String(s) => Some(s),
@@ -311,7 +314,7 @@ impl KdlValue {
         }
     }
 
-    /// bool 値を返す。
+    /// Returns the boolean if this value is a `Bool`.
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             KdlValue::Bool(b) => Some(*b),
@@ -319,7 +322,7 @@ impl KdlValue {
         }
     }
 
-    /// f64 値を返す。
+    /// Returns the `f64` representation if this value is a `Number`.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             KdlValue::Number(n) => n.as_f64(),
@@ -327,7 +330,7 @@ impl KdlValue {
         }
     }
 
-    /// i64 値を返す。
+    /// Returns the `i64` representation if this value is a `Number`.
     pub fn as_i64(&self) -> Option<i64> {
         match self {
             KdlValue::Number(n) => n.as_i64(),
@@ -336,9 +339,9 @@ impl KdlValue {
     }
 }
 
-/// 数値の raw 文字列を保持しつつ、可能な場合は解釈済み値も提供する。
+/// Preserves a number's raw source spelling alongside its `i64` and `f64` interpretations when available.
 ///
-/// KDL v2 は数値サイズに制限を置かないため、i64/f64 に収まらない値も受理する。
+/// KDL v2 places no limit on number size, so values outside the range of `i64` or `f64` are also accepted.
 #[derive(Debug, Clone)]
 pub struct KdlNumber {
     pub(crate) raw: String,
@@ -349,23 +352,23 @@ pub struct KdlNumber {
 }
 
 impl KdlNumber {
-    /// 原文を返す。
+    /// Returns the raw source spelling.
     pub fn raw(&self) -> &str {
         &self.raw
     }
 
-    /// 整数として解釈可能な場合の値を返す。
+    /// Returns the `i64` value when the number is an integer literal that fits in `i64`.
     pub fn as_i64(&self) -> Option<i64> {
         self.as_i64
     }
 
-    /// 浮動小数点として解釈可能な場合の値を返す。
+    /// Returns the `f64` interpretation when available.
     pub fn as_f64(&self) -> Option<f64> {
         self.as_f64
     }
 }
 
-/// `KdlNumber` の raw と解釈値が一致しない場合の構築エラー。
+/// Error returned when a `KdlNumber` raw string and supplied interpretations do not match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NumberError;
 
@@ -383,7 +386,7 @@ impl PartialEq for KdlNumber {
     }
 }
 
-/// パースエラー。
+/// A KDL parse error with a 1-based line, column, and error kind.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KdlError {
     pub(crate) line: usize,
@@ -394,17 +397,17 @@ pub struct KdlError {
 }
 
 impl KdlError {
-    /// 行番号 (1-based) を返す。
+    /// Returns the 1-based line number.
     pub fn line(&self) -> usize {
         self.line
     }
 
-    /// 列番号 (1-based、Unicode scalar value 単位) を返す。
+    /// Returns the 1-based column number, counted in Unicode scalar values.
     pub fn col(&self) -> usize {
         self.col
     }
 
-    /// エラー種別を返す。
+    /// Returns the error kind.
     pub fn kind(&self) -> &KdlErrorKind {
         &self.kind
     }
@@ -416,32 +419,32 @@ impl core::fmt::Display for KdlError {
     }
 }
 
-/// エラー種別。
+/// The specific cause of a [`KdlError`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum KdlErrorKind {
-    /// 予期しない文字
+    /// Unexpected character.
     UnexpectedChar(char),
-    /// 予期しない EOF
+    /// Unexpected end of input.
     UnexpectedEof,
-    /// 不正な文字列エスケープ
+    /// Invalid string escape sequence.
     InvalidEscape,
-    /// 不正な Unicode エスケープ
+    /// Invalid Unicode escape sequence.
     InvalidUnicodeEscape,
-    /// 不正な数値リテラル
+    /// Invalid number literal.
     InvalidNumber,
-    /// 禁止コードポイント
+    /// Disallowed Unicode code point.
     DisallowedCodePoint(char),
-    /// 裸キーワード (true, false, null, inf, -inf, nan)
+    /// A keyword literal (true, false, null, inf, -inf, or nan) used without a leading `#`.
     BareKeyword,
-    /// ネストされていないブロックコメント終端
+    /// Unmatched block comment closing delimiter `*/`.
     UnmatchedBlockCommentEnd,
-    /// 閉じられていないブロックコメント
+    /// Unclosed block comment.
     UnclosedBlockComment,
-    /// 閉じられていない文字列
+    /// Unclosed string literal.
     UnclosedString,
-    /// multiline string のインデント不一致
+    /// Inconsistent indentation in a multiline string.
     InconsistentIndentation,
-    /// slashdash の不正な位置
+    /// Slashdash (`/-`) in an invalid position.
     InvalidSlashdash,
 }
 
@@ -590,6 +593,34 @@ mod tests {
             node.get("color"),
             Some(&KdlValue::String("red".to_string()))
         );
+    }
+
+    #[test]
+    fn node_get_uses_rightmost_duplicate_property() {
+        let node = KdlNode {
+            ty: None,
+            name: "test".to_string(),
+            entries: vec![
+                KdlEntry::Property {
+                    key: "value".to_string(),
+                    ty: None,
+                    value: KdlValue::String("first".to_string()),
+                },
+                KdlEntry::Property {
+                    key: "value".to_string(),
+                    ty: None,
+                    value: KdlValue::String("second".to_string()),
+                },
+            ],
+            children: None,
+        };
+
+        assert_eq!(
+            node.get("value"),
+            Some(&KdlValue::String("second".to_string()))
+        );
+        assert_eq!(node.string_prop("value"), Some("second"));
+        assert_eq!(node.entries().len(), 2);
     }
 
     #[test]

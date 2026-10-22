@@ -1,4 +1,4 @@
-use neco_json::{encode, parse, JsonValue};
+use neco_json::{encode, parse, JsonNumber, JsonValue};
 
 #[test]
 fn crate_build_contract_is_visible_from_public_api() {
@@ -56,13 +56,17 @@ fn unicode_surrogate_pair_decodes_through_public_api() {
     assert_eq!(value.required_str("emoji"), Ok("🚀"));
 }
 
+fn finite_number(value: f64) -> JsonValue {
+    JsonNumber::from_f64(value).unwrap().into()
+}
+
 #[test]
 fn roundtrip_preserves_complex_value_equivalence() {
     let value = JsonValue::Object(vec![
         (
             "meta".into(),
             JsonValue::Object(vec![
-                ("version".into(), JsonValue::Number(1.0)),
+                ("version".into(), finite_number(1.0)),
                 ("cursor".into(), JsonValue::Null),
             ]),
         ),
@@ -76,7 +80,7 @@ fn roundtrip_preserves_complex_value_equivalence() {
                 JsonValue::Object(vec![
                     ("id".into(), JsonValue::String("two".into())),
                     ("enabled".into(), JsonValue::Bool(false)),
-                    ("score".into(), JsonValue::Number(-1.5e-3)),
+                    ("score".into(), finite_number(-1.5e-3)),
                 ]),
             ]),
         ),
@@ -93,6 +97,39 @@ fn roundtrip_preserves_complex_value_equivalence() {
         .required_array("items")
         .expect("items should be array");
     assert_eq!(items.len(), 2);
+}
+
+#[test]
+fn owned_numbers_preserve_valid_json_spelling() {
+    for input in [
+        "0",
+        "-0",
+        "-12",
+        "3.5",
+        "1e2",
+        "1E+10",
+        "1e-10",
+        "-0.0",
+        "9007199254740993",
+        "18446744073709551615",
+        "1e400",
+    ] {
+        let value = parse(input.as_bytes()).unwrap();
+        let number = value.as_number().unwrap();
+        assert_eq!(number.raw(), input);
+        assert_eq!(encode(&value).unwrap(), input.as_bytes());
+        assert_eq!(parse(&encode(&value).unwrap()).unwrap(), value);
+    }
+
+    assert_eq!(
+        parse(b"9007199254740993")
+            .unwrap()
+            .as_number()
+            .unwrap()
+            .as_u64(),
+        Some(9_007_199_254_740_993)
+    );
+    assert_eq!(parse(b"1e400").unwrap().as_number().unwrap().as_f64(), None);
 }
 
 #[test]

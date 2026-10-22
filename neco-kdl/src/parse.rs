@@ -19,16 +19,16 @@ impl NodeContext {
     }
 }
 
-/// KDL v2 ドキュメントをパースする。
+/// Parses a KDL v2 document.
 ///
-/// 通常の document は parse_spanned の結果から導出する。構文規則は一つである。
+/// Derived from [`parse_spanned`] by stripping spans, so both functions share the same grammar and errors.
 pub fn parse(input: &str) -> Result<KdlDocument, KdlError> {
     parse_spanned(input).map(SpannedKdlDocument::into_document)
 }
 
-/// KDL v2 ドキュメントを解析し、各 node と entry に位置情報を付与する。
+/// Parses a KDL v2 document and attaches source spans to each node and entry.
 ///
-/// span は入力 byte 列の半開区間。into_document で通常の値へ変換できる。
+/// Each span is a half-open byte range into `input`; use [`SpannedKdlDocument::into_document`] to strip spans.
 pub fn parse_spanned(input: &str) -> Result<SpannedKdlDocument, KdlError> {
     let mut s = Scanner::new(input);
     s.skip_bom();

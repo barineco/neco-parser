@@ -6,15 +6,8 @@ fn compare(owned: &JsonValue, view: JsonRef<'_>) {
         JsonValue::Bool(value) => assert_eq!(view.as_bool(), Some(*value)),
         JsonValue::Number(value) => {
             assert_eq!(view.kind(), JsonKind::Number);
-            assert_eq!(
-                view.raw().parse::<f64>().unwrap().to_bits(),
-                value.to_bits()
-            );
-            if view.raw().bytes().all(|byte| byte.is_ascii_digit()) {
-                assert_eq!(view.as_u64(), Some(*value as u64));
-            } else {
-                assert_eq!(view.as_u64(), None);
-            }
+            assert_eq!(view.raw(), value.raw());
+            assert_eq!(view.as_u64(), value.as_u64());
         }
         JsonValue::String(value) => assert_eq!(view.as_str().unwrap().unwrap(), value.as_str()),
         JsonValue::Array(values) => {
@@ -44,7 +37,7 @@ fn compare(owned: &JsonValue, view: JsonRef<'_>) {
 }
 
 #[test]
-fn exact_common_domain_preserves_both_public_representations() {
+fn owned_and_borrowed_views_preserve_the_same_tokens() {
     for input in [
         "null",
         "true",
@@ -53,9 +46,15 @@ fn exact_common_domain_preserves_both_public_representations() {
         "-0",
         "-13",
         "3.5",
-        "9007199254740992",
+        "1e2",
+        "1E+10",
+        "1e-10",
+        "-0.0",
+        "9007199254740993",
+        "18446744073709551615",
+        "1e400",
         "\"é\\n\\uD83D\\uDE00\"",
-        "[null,true,false,0,-0,42,9007199254740992,\"水\"]",
+        "[null,true,false,0,-0,42,9007199254740993,\"水\"]",
         " {\"same\":0,\"same\":{\"nested\":[1,2,\"\\u00e9\"]}} ",
     ] {
         compare(

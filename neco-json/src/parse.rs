@@ -28,14 +28,9 @@ fn owned(value: JsonRef<'_>) -> Result<JsonValue, ParseError> {
     match value.kind() {
         JsonKind::Null => Ok(JsonValue::Null),
         JsonKind::Bool => Ok(JsonValue::Bool(value.raw() == "true")),
-        JsonKind::Number => value
-            .raw()
-            .parse::<f64>()
-            .map(JsonValue::Number)
-            .map_err(|_| ParseError {
-                kind: ParseErrorKind::InvalidNumber,
-                position: value.end,
-            }),
+        JsonKind::Number => Ok(JsonValue::Number(crate::JsonNumber::from_validated(
+            value.raw(),
+        ))),
         JsonKind::String => string(value).map(JsonValue::String),
         JsonKind::Array => {
             let mut items = Vec::new();
@@ -61,17 +56,21 @@ mod tests {
     use alloc::vec;
 
     use super::parse;
-    use crate::{JsonValue, ParseErrorKind};
+    use crate::{JsonNumber, JsonValue, ParseErrorKind};
+
+    fn number(raw: &str) -> JsonValue {
+        JsonValue::Number(JsonNumber::new(raw).unwrap())
+    }
 
     #[test]
     fn parses_basic_types() {
         assert_eq!(parse(b"null"), Ok(JsonValue::Null));
         assert_eq!(parse(b"true"), Ok(JsonValue::Bool(true)));
         assert_eq!(parse(b"false"), Ok(JsonValue::Bool(false)));
-        assert_eq!(parse(b"0"), Ok(JsonValue::Number(0.0)));
-        assert_eq!(parse(b"-12"), Ok(JsonValue::Number(-12.0)));
-        assert_eq!(parse(b"3.5"), Ok(JsonValue::Number(3.5)));
-        assert_eq!(parse(b"1.25e2"), Ok(JsonValue::Number(125.0)));
+        assert_eq!(parse(b"0"), Ok(number("0")));
+        assert_eq!(parse(b"-12"), Ok(number("-12")));
+        assert_eq!(parse(b"3.5"), Ok(number("3.5")));
+        assert_eq!(parse(b"1.25e2"), Ok(number("1.25e2")));
         assert_eq!(
             parse(br#""hello""#),
             Ok(JsonValue::String(String::from("hello")))
@@ -115,7 +114,7 @@ mod tests {
                         JsonValue::Object(vec![(String::from("flag"), JsonValue::Bool(true))]),
                         JsonValue::Array(vec![
                             JsonValue::Null,
-                            JsonValue::Object(vec![(String::from("n"), JsonValue::Number(2.0))]),
+                            JsonValue::Object(vec![(String::from("n"), number("2"))]),
                         ]),
                     ]),
                 ),
@@ -175,15 +174,15 @@ mod tests {
 
     #[test]
     fn parses_all_supported_number_forms() {
-        assert_eq!(parse(b"0"), Ok(JsonValue::Number(0.0)));
-        assert_eq!(parse(b"-0"), Ok(JsonValue::Number(-0.0)));
-        assert_eq!(parse(b"0.5"), Ok(JsonValue::Number(0.5)));
-        assert_eq!(parse(b"-0.5"), Ok(JsonValue::Number(-0.5)));
-        assert_eq!(parse(b"1e10"), Ok(JsonValue::Number(1e10)));
-        assert_eq!(parse(b"1E+10"), Ok(JsonValue::Number(1e10)));
-        assert_eq!(parse(b"1e-10"), Ok(JsonValue::Number(1e-10)));
-        assert_eq!(parse(b"1.5e2"), Ok(JsonValue::Number(150.0)));
-        assert_eq!(parse(b"-1.5E-3"), Ok(JsonValue::Number(-1.5e-3)));
+        assert_eq!(parse(b"0"), Ok(number("0")));
+        assert_eq!(parse(b"-0"), Ok(number("-0")));
+        assert_eq!(parse(b"0.5"), Ok(number("0.5")));
+        assert_eq!(parse(b"-0.5"), Ok(number("-0.5")));
+        assert_eq!(parse(b"1e10"), Ok(number("1e10")));
+        assert_eq!(parse(b"1E+10"), Ok(number("1E+10")));
+        assert_eq!(parse(b"1e-10"), Ok(number("1e-10")));
+        assert_eq!(parse(b"1.5e2"), Ok(number("1.5e2")));
+        assert_eq!(parse(b"-1.5E-3"), Ok(number("-1.5E-3")));
     }
 
     #[test]
@@ -196,7 +195,7 @@ mod tests {
             parse(b"-00").unwrap_err().kind,
             ParseErrorKind::TrailingContent
         );
-        assert_eq!(parse(b"-0"), Ok(JsonValue::Number(-0.0)));
+        assert_eq!(parse(b"-0"), Ok(number("-0")));
     }
 
     #[test]
@@ -206,13 +205,13 @@ mod tests {
 
     #[test]
     fn accepts_all_json_whitespace_around_values() {
-        assert_eq!(parse(b"\t\r\n 42 \r\n\t"), Ok(JsonValue::Number(42.0)));
+        assert_eq!(parse(b"\t\r\n 42 \r\n\t"), Ok(number("42")));
         assert_eq!(
             parse(b"\r\n[\t1,\n2,\r3 \t]\n"),
             Ok(JsonValue::Array(vec![
-                JsonValue::Number(1.0),
-                JsonValue::Number(2.0),
-                JsonValue::Number(3.0),
+                number("1"),
+                number("2"),
+                number("3"),
             ]))
         );
         assert_eq!(
@@ -230,10 +229,7 @@ mod tests {
         assert_eq!(parse(b"[]"), Ok(JsonValue::Array(vec![])));
         assert_eq!(
             parse(br#"{"":1}"#),
-            Ok(JsonValue::Object(vec![(
-                String::from(""),
-                JsonValue::Number(1.0)
-            )]))
+            Ok(JsonValue::Object(vec![(String::from(""), number("1"))]))
         );
     }
 
@@ -337,8 +333,8 @@ mod tests {
 
     #[test]
     fn parses_negative_exponent() {
-        assert_eq!(parse(b"1e-2"), Ok(JsonValue::Number(0.01)));
-        assert_eq!(parse(b"5E+3"), Ok(JsonValue::Number(5000.0)));
+        assert_eq!(parse(b"1e-2"), Ok(number("1e-2")));
+        assert_eq!(parse(b"5E+3"), Ok(number("5E+3")));
     }
 
     #[test]

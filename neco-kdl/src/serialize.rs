@@ -3,7 +3,7 @@ use core::fmt::{self, Write};
 use crate::scan::{is_disallowed, is_identifier_char, is_newline, is_reserved_keyword};
 use crate::{KdlDocument, KdlEntry, KdlNode, KdlValue};
 
-/// KDL v2 ドキュメントを文字列へシリアライズする。
+/// Serializes a [`KdlDocument`] into a KDL v2 string.
 pub fn serialize(doc: &KdlDocument) -> String {
     doc.to_string()
 }

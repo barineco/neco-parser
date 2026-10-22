@@ -74,7 +74,7 @@ fn sha256(input: &[u8]) -> [u8; 32] {
             a = temporary1.wrapping_add(temporary2);
         }
 
-        for (slot, value) in hash.iter_mut().zip([a, b, c, d, e, f, g, h].into_iter()) {
+        for (slot, value) in hash.iter_mut().zip([a, b, c, d, e, f, g, h]) {
             *slot = slot.wrapping_add(value);
         }
     }
@@ -211,6 +211,42 @@ fn negative_zero_float_normalization_preserves_sign() {
 }
 
 #[test]
+fn duplicate_property_access_uses_rightmost_value() {
+    let document = neco_kdl::parse(
+        "node value=1 flag=#false text=\"first\" value=2 flag=#true text=\"second\"\n",
+    )
+    .unwrap();
+    let node = &document.nodes()[0];
+    assert_eq!(node.int_prop("value"), Some(2));
+    assert_eq!(node.bool_prop("flag"), Some(true));
+    assert_eq!(node.string_prop("text"), Some("second"));
+    let properties: Vec<_> = node
+        .entries()
+        .iter()
+        .filter_map(|entry| match entry {
+            neco_kdl::KdlEntry::Property { key, value, .. } => Some((
+                key.as_str(),
+                value.as_i64(),
+                value.as_bool(),
+                value.as_str(),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        properties,
+        [
+            ("value", Some(1), None, None),
+            ("flag", None, Some(false), None),
+            ("text", None, None, Some("first")),
+            ("value", Some(2), None, None),
+            ("flag", None, Some(true), None),
+            ("text", None, None, Some("second")),
+        ]
+    );
+}
+
+#[test]
 fn serialize_escape_branches_match_exact_output() {
     let document = neco_kdl::KdlDocument {
         nodes: vec![neco_kdl::KdlNode {
@@ -307,6 +343,34 @@ fn kdl_official_test_suite_parse() {
             hangs.len(),
             total_problems
         );
+    }
+}
+
+#[test]
+fn official_success_vectors_roundtrip_through_serializer() {
+    let input_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/kdl-test-cases/input");
+    let mut files: Vec<_> = fs::read_dir(input_dir)
+        .expect("input dir should exist")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().and_then(|extension| extension.to_str()) == Some("kdl")
+                && !path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| stem.ends_with("_fail"))
+        })
+        .collect();
+    files.sort();
+
+    for path in files {
+        let input = fs::read_to_string(&path).unwrap();
+        let parsed =
+            neco_kdl::parse(&input).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let serialized = neco_kdl::serialize(&parsed);
+        let reparsed = neco_kdl::parse(&serialized)
+            .unwrap_or_else(|error| panic!("{} serialized: {error}", path.display()));
+        assert_eq!(reparsed, parsed, "{}", path.display());
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "neco-kdl"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
@@ -8,7 +8,7 @@ description = "zero dependency KDL v2 parser, serializer, and document builder"
 repository = "https://github.com/barineco/neco-parser"
 readme = "README.md"
 documentation = "https://docs.rs/neco-kdl"
-keywords = ["kdl", "parser", "configuration", "no-std"]
+keywords = ["kdl", "parser", "configuration"]
 categories = ["encoding", "parser-implementations"]
 exclude = ["tests/kdl-test-cases"]
 

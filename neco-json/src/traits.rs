@@ -23,19 +23,13 @@ impl ToJson for bool {
 
 impl ToJson for i64 {
     fn to_json(&self) -> JsonValue {
-        JsonValue::Number(*self as f64)
+        JsonValue::from(*self)
     }
 }
 
 impl ToJson for u64 {
     fn to_json(&self) -> JsonValue {
-        JsonValue::Number(*self as f64)
-    }
-}
-
-impl ToJson for f64 {
-    fn to_json(&self) -> JsonValue {
-        JsonValue::Number(*self)
+        JsonValue::from(*self)
     }
 }
 
@@ -148,12 +142,17 @@ impl<T: FromJson> FromJson for Box<T> {
 
 #[cfg(test)]
 mod tests {
+    fn number(value: f64) -> JsonValue {
+        JsonNumber::from_f64(value).unwrap().into()
+    }
+
     use alloc::boxed::Box;
     use alloc::string::{String, ToString};
     use alloc::vec;
 
     use super::{FromJson, ToJson};
     use crate::value::JsonValue;
+    use crate::JsonNumber;
 
     fn roundtrip<T: ToJson + FromJson + PartialEq + core::fmt::Debug>(value: T) {
         let json = value.to_json();
@@ -192,8 +191,23 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_f64() {
-        roundtrip(2.5_f64);
+    fn f64_from_json_uses_the_finite_interpretation() {
+        let json = number(2.5);
+        assert_eq!(f64::from_json(&json), Ok(2.5));
+    }
+
+    #[test]
+    fn from_json_uses_the_number_token_contract() {
+        let integer = JsonValue::Number(JsonNumber::new("7").unwrap());
+        let decimal = JsonValue::Number(JsonNumber::new("7.0").unwrap());
+        let exponent = JsonValue::Number(JsonNumber::new("7e0").unwrap());
+        let overflow = JsonValue::Number(JsonNumber::new("1e400").unwrap());
+
+        assert_eq!(i64::from_json(&integer), Ok(7));
+        assert!(i64::from_json(&decimal).is_err());
+        assert!(u64::from_json(&exponent).is_err());
+        assert_eq!(f64::from_json(&decimal), Ok(7.0));
+        assert!(f64::from_json(&overflow).is_err());
     }
 
     #[test]
@@ -253,26 +267,26 @@ mod tests {
 
     #[test]
     fn json_value_integer_accessors_return_only_exact_integers() {
-        let n = JsonValue::Number(7.0);
+        let n = JsonValue::from(7_i64);
         assert_eq!(n.as_i64(), Some(7_i64));
         assert_eq!(n.as_u64(), Some(7_u64));
 
-        let neg = JsonValue::Number(-3.0);
+        let neg = JsonValue::from(-3_i64);
         assert_eq!(neg.as_i64(), Some(-3_i64));
         assert_eq!(neg.as_u64(), None);
 
-        let frac = JsonValue::Number(1.5);
+        let frac = number(1.5);
         assert_eq!(frac.as_i64(), None);
         assert_eq!(frac.as_u64(), None);
 
-        let i64_min = JsonValue::Number(-9_223_372_036_854_775_808.0);
+        let i64_min = JsonValue::from(i64::MIN);
         assert_eq!(i64_min.as_i64(), Some(i64::MIN));
 
-        let two_pow_63 = JsonValue::Number(9_223_372_036_854_775_808.0);
+        let two_pow_63 = JsonValue::from(1_u64 << 63);
         assert_eq!(two_pow_63.as_i64(), None);
         assert_eq!(two_pow_63.as_u64(), Some(1_u64 << 63));
 
-        let two_pow_64 = JsonValue::Number(18_446_744_073_709_551_616.0);
+        let two_pow_64 = number(18_446_744_073_709_551_616.0);
         assert_eq!(two_pow_64.as_u64(), None);
     }
 }

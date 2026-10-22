@@ -2,23 +2,26 @@
 
 [日本語](README-ja.md)
 
-zero dependency KDL v2 parser, serializer, and document builder.
+`neco-kdl` is a zero-dependency Rust crate for parsing, serializing, normalizing, and building KDL v2 documents.
 
 ## Features
 
-- Full KDL v2 specification parsing
-  - Multiline strings, raw strings, escline
-  - Type annotations: `(type)node`
-  - Slashdash comments (`/-`), block comments (`/* ... */`), nested comments
-  - Keyword literals: #true, #false, #null, #inf, #-inf, #nan
-  - Hex, octal, binary literals with underscore separators
-  - Version marker (`/- kdl-version 2`)
-- Positional parse tree via `parse_spanned()` with a UTF-8 byte span per node and entry
-- Serialization via `serialize()` and `Display` impl (roundtrip-safe)
-- Normalized output (matches official test suite `expected_kdl`)
-- Format-agnostic `Value` conversion, bridging to and from `KdlDocument`
-- Zero external dependencies
-- Passes the full official test suite
+- KDL v2 parsing
+  - Multiline strings, raw strings, and esclines
+  - Type annotations such as `(type)node`
+  - Slashdash comments ( `/-` ), block comments, and nested comments
+  - Keyword literals
+    - Booleans: `#true` and `#false`
+    - Null: `#null`
+    - Infinities: `#inf` and `#-inf`
+    - Not a number: `#nan`
+  - Hexadecimal, octal, and binary literals with underscore separators
+  - Version marker ( `/- kdl-version 2` )
+- `parse_spanned`: a syntax tree with UTF-8 byte spans for nodes and entries
+- `serialize` and `Display`: serialization from value types to KDL text
+- `normalize`: normalized output matching the official test suite's `expected_kdl`
+- `Value` conversion: conversion between `KdlDocument` and format-independent values
+- Parsing of every successful official test vector, with document equality after serialization and reparsing
 
 ## Usage
 
@@ -62,7 +65,8 @@ fn main() {
 pub fn parse(input: &str) -> Result<KdlDocument, KdlError>
 ```
 
-Parses a KDL v2 document and returns a `KdlDocument`. The result is derived from `parse_spanned`, so both entry points accept the same inputs and return the same errors.
+Parses a KDL v2 document and returns a `KdlDocument`.
+The function removes spans from the result of `parse_spanned`, so both entry points accept the same inputs and return the same errors.
 
 ### `parse_spanned`
 
@@ -73,7 +77,7 @@ pub fn parse_spanned(input: &str) -> Result<SpannedKdlDocument, KdlError>
 Parses a KDL v2 document and attaches a source span to every node and entry. A span is a half-open range of UTF-8 byte offsets into the input. Boundaries follow these rules:
 
 - A node span starts at the leading type annotation, or at the name when there is none.
-- A node span ends immediately after the name or the last adopted element (entry, child block, slashdash entry, slashdash child block), excluding trailing node-space, comments, and the node terminator.
+- A node span ends immediately after the name or the last element (entry, child block, slashdash entry, or slashdash child block), excluding trailing node-space, comments, and the node terminator.
 - An entry span starts at the value type annotation or value for an argument, and at the key for a property. It ends at the value.
 - Slashdash entries and child blocks are excluded from the output but included in the parent node span.
 
@@ -121,7 +125,12 @@ Derives a 1-based line and column from a byte offset. Returns `None` for an out-
 pub fn serialize(doc: &KdlDocument) -> String
 ```
 
-Converts a `KdlDocument` back to KDL text. All four node and value types implement `Display`.
+Converts a document back to KDL text. The following types also implement `Display`:
+
+- `KdlDocument`
+- `KdlNode`
+- `KdlEntry`
+- `KdlValue`
 
 ### `normalize`
 
@@ -134,11 +143,14 @@ Converts a `KdlDocument` to its normalized string form. Normalization rules:
 - Strips comments
 - Sorts properties by key in alphabetical order
 - Deduplicates properties (last occurrence wins)
-- Converts all strings to quoted strings
-- Unquotes strings that are valid identifiers
+- Outputs strings as quoted strings or valid bare identifiers
 - Indents with 4 spaces
+- Removes empty child blocks (`node {}` becomes `node`)
 - Converts numbers to decimal, strips underscores
-- Adds trailing newline
+- Removes the sign from integer negative zero (`-0` becomes `0`), while keeping -0.0 for floats
+- Formats exponents with uppercase E and an explicit sign (`1.5e10` becomes `1.5E+10`)
+- Strips leading zeros from the integer part and keeps trailing zeros in the fractional part (007 becomes 7, `00.50` becomes `0.50`)
+- Adds a trailing newline
 
 ### `value_to_kdl_document` / `kdl_document_to_value`
 
@@ -147,15 +159,43 @@ pub fn value_to_kdl_document(value: &Value) -> Result<KdlDocument, ValueError>
 pub fn kdl_document_to_value(doc: &KdlDocument) -> Result<Value, ValueError>
 ```
 
-Converts between `KdlDocument` and a format-agnostic `Value` enum, usable as an intermediate representation for bridging KDL with formats such as JSON or CBOR without external dependencies.
+Converts between `KdlDocument` and the format-independent `Value` type, which can carry values between KDL and formats such as JSON or CBOR.
 
-Conversion preserves an empty Object as an empty children block. Seven typed reasons describe unsupported or lossy inputs:
+Mapping rules between KDL nodes and `Value`:
 
-- an empty Array
-- a nested collection inside an Array
-- properties and unsupported type annotations
-- mixed arguments and children
-- a number without an interpreted value
+- A node with no arguments and no child block maps to `Null`
+- `Value::Null` becomes a node with a single `#null` argument
+- A node with one argument maps to that value, and a node with two or more arguments maps to `Array`
+- A node with only a child block maps to `Object`
+- A nested empty `Value::Object` becomes a node with an empty child block
+- `Integer` becomes an untyped number
+- `Float` becomes a number annotated with `(f64)`
+- An untyped number decodes to `Integer` when it fits in i64, or `Float` otherwise
+
+Conversion failure returns `ValueError`, whose cause is classified into seven `ValueErrorReason` variants:
+
+- `TopLevelMustBeObject`: an array or primitive supplied at the top level
+- `NestedCollectionInArray`: an array or object used as an array element
+- `EmptyArrayCannotBeConverted`: an empty array
+- `PropertyCannotBeConverted`: a property in a KDL node
+- `MixedArgumentsAndChildren`: arguments and a child block in one KDL node
+- `UnsupportedTypeAnnotation(String)`: a node type annotation or an unsupported argument annotation-value pair; `(f64)` is supported for numbers
+- `NumberCannotBeConverted(String)`: failure of both integer and floating-point interpretation
+
+### Document builders
+
+`KdlDocument::builder()` and `KdlNode::builder(name)` construct documents and nodes through method chaining.
+
+```rust
+use neco_kdl::{KdlDocument, KdlNode};
+
+let document = KdlDocument::builder()
+    .node(KdlNode::builder("greet").string_arg("hello").build())
+    .node(KdlNode::builder("enabled").bool_arg(true).build())
+    .build();
+
+assert_eq!(document.nodes().len(), 2);
+```
 
 ### `KdlNumber`
 
@@ -175,21 +215,34 @@ impl KdlNumber {
 
 | Item | Description |
 |------|-------------|
-| `KdlDocument` | Parse result root. Access nodes via `nodes()` |
-| `KdlNode` | Node with ty(), name(), entries(), children() accessors |
-| `KdlEntry` | Argument (positional) or Property (named) |
-| `KdlSpan` | Half-open UTF-8 byte range with public offset fields |
-| `SpannedKdlDocument` | Spanned document root, convertible to a plain document |
-| `SpannedKdlNode` | Spanned node carrying a span and the plain node view |
-| `SpannedKdlEntry` | Spanned entry carrying a span and the plain entry view |
-| `KdlValue` | String(String), Number(KdlNumber), Bool(bool), Null |
-| `KdlNumber` | Validated raw number with optional integer and floating-point interpretations |
-| `NumberError` | Raw syntax and interpreted value mismatch |
-| `KdlError` | Error with line(), col() (1-based), kind() |
-| `KdlErrorKind` | Error variant: UnexpectedChar, InvalidEscape, UnclosedString, etc. |
-| `Value` | Format-agnostic intermediate: Null, Bool, Integer, Float, String, Array, Object |
-| `ValueError` | Value conversion error containing a `ValueErrorReason` |
-| `ValueErrorReason` | Seven explicit rejection reasons for unsupported or lossy conversions |
+| `KdlDocument` | Root of a parsed document |
+| `KdlNode` | Node with a type, name, entries, and child nodes |
+| `KdlEntry` | Positional or named entry |
+| `KdlDocumentBuilder` | Builder that adds nodes to a document |
+| `KdlNodeBuilder` | Builder that adds arguments, properties, child nodes, and a type annotation |
+| `KdlSpan` | Half-open UTF-8 byte range |
+| `SpannedKdlDocument` | Root of a document with source spans |
+| `SpannedKdlNode` | Node paired with its source span |
+| `SpannedKdlEntry` | Entry paired with its source span |
+| `KdlValue` | String, number, Boolean, or null value |
+| `KdlNumber` | Validated source spelling and numeric interpretations |
+| `NumberError` | Mismatch between source spelling and supplied interpretations |
+| `KdlError` | Parse error with a line, column, and kind |
+| `KdlErrorKind` | Character, escape, string, and related error kinds |
+| `Value` | Format-independent intermediate value |
+| `ValueError` | Conversion error with a classified reason |
+| `ValueErrorReason` | Seven reasons for conversion failure |
+
+The main enum variants and accessors are:
+
+```text
+KdlEntry = Argument | Property
+KdlValue = String(String) | Number(KdlNumber) | Bool(bool) | Null
+Value = Null | Bool | Integer | Float | String | Array | Object
+KdlNode accessors = ty() | name() | entries() | children()
+KdlError accessors = line() | col() | kind()
+KdlErrorKind examples = UnexpectedChar | InvalidEscape | UnclosedString
+```
 
 ## License
 

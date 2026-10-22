@@ -2,12 +2,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::error::AccessError;
+use crate::JsonNumber;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
     Null,
     Bool(bool),
-    Number(f64),
+    Number(JsonNumber),
     String(String),
     Array(Vec<JsonValue>),
     Object(Vec<(String, JsonValue)>),
@@ -45,40 +46,23 @@ impl JsonValue {
         }
     }
 
-    pub fn as_f64(&self) -> Option<f64> {
+    pub fn as_number(&self) -> Option<&JsonNumber> {
         match self {
-            Self::Number(value) => Some(*value),
+            Self::Number(value) => Some(value),
             _ => None,
         }
+    }
+
+    pub fn as_f64(&self) -> Option<f64> {
+        self.as_number().and_then(JsonNumber::as_f64)
     }
 
     pub fn as_i64(&self) -> Option<i64> {
-        match self {
-            Self::Number(value) => {
-                let n = *value;
-
-                if n >= i64::MIN as f64 && n < i64::MAX as f64 && (n as i64) as f64 == n {
-                    Some(n as i64)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+        self.as_number().and_then(JsonNumber::as_i64)
     }
 
     pub fn as_u64(&self) -> Option<u64> {
-        match self {
-            Self::Number(value) => {
-                let n = *value;
-                if n >= 0.0 && n < u64::MAX as f64 && (n as u64) as f64 == n {
-                    Some(n as u64)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+        self.as_number().and_then(JsonNumber::as_u64)
     }
 
     pub fn as_str(&self) -> Option<&str> {
@@ -195,19 +179,41 @@ impl JsonValue {
     }
 }
 
+impl From<JsonNumber> for JsonValue {
+    fn from(value: JsonNumber) -> Self {
+        Self::Number(value)
+    }
+}
+
+impl From<i64> for JsonValue {
+    fn from(value: i64) -> Self {
+        Self::Number(JsonNumber::from_i64(value))
+    }
+}
+
+impl From<u64> for JsonValue {
+    fn from(value: u64) -> Self {
+        Self::Number(JsonNumber::from_u64(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    fn number(value: f64) -> JsonValue {
+        JsonNumber::from_f64(value).unwrap().into()
+    }
+
     use alloc::string::String;
     use alloc::vec;
 
     use super::JsonValue;
-    use crate::AccessError;
+    use crate::{AccessError, JsonNumber};
 
     fn sample_object() -> JsonValue {
         JsonValue::Object(vec![
             ("name".into(), JsonValue::String("neco".into())),
             ("enabled".into(), JsonValue::Bool(true)),
-            ("score".into(), JsonValue::Number(42.5)),
+            ("score".into(), number(42.5)),
             (
                 "items".into(),
                 JsonValue::Array(vec![JsonValue::Bool(false), JsonValue::Null]),
@@ -226,7 +232,7 @@ mod tests {
     fn is_methods_match_variants() {
         assert!(JsonValue::Null.is_null());
         assert!(JsonValue::Bool(true).is_bool());
-        assert!(JsonValue::Number(1.0).is_number());
+        assert!(number(1.0).is_number());
         assert!(JsonValue::String("x".into()).is_string());
         assert!(JsonValue::Array(vec![]).is_array());
         assert!(JsonValue::Object(vec![]).is_object());
@@ -238,7 +244,7 @@ mod tests {
         assert_eq!(value.as_bool(), Some(true));
         assert_eq!(value.as_f64(), None);
 
-        let value = JsonValue::Number(3.25);
+        let value = number(3.25);
         assert_eq!(value.as_f64(), Some(3.25));
         assert_eq!(value.as_str(), None);
 

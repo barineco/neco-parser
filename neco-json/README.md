@@ -2,20 +2,19 @@
 
 [日本語](README-ja.md)
 
-neco-json is a minimal JSON codec with zero external dependencies that runs in `no_std` + `alloc` environments.
-It provides parsing, encoding, and type-safe field access.
-It also provides lightweight `ToJson` / `FromJson` conversion traits built on JsonValue.
+`neco-json` is a small, zero-dependency JSON codec.
+It runs in `#![no_std]` + `alloc` environments and provides parsing, encoding, typed field access, and conversions between JSON and Rust values.
 
-neco-json provides two read paths whose memory allocation behavior differs.
+The reading API has two paths with different allocation behavior:
 
-- Owned value tree: the `JsonValue` returned by `parse`
-- Borrowed reading: the `JsonRef` returned by `parse_borrowed`, borrowing the input
+- Owned values: `JsonValue` returned by `parse`
+- Input-borrowing values: `JsonRef` returned by `parse_borrowed`
 
-The owned tree represents numbers as `f64` and allocates arrays and strings through Rust's infallible allocation API. The application's allocator and the Rust runtime handle allocation failure.
+The owned path stores each number's input spelling in `JsonNumber`. Its arrays and strings use Rust's infallible allocation APIs, so allocation failure follows the application allocator and Rust runtime.
 
-Borrowed validation and most reads use the input and stack values. Decoding an escaped string with `as_str()` is the allocation-bearing operation; allocation failure returns `Err`.
+Borrowed validation and most value access use only references into the input and values on the stack. Decoding an escaped string with `as_str()` is the only operation that allocates; allocation failure is returned as `StringDecodeError`.
 
-The borrowed-reading section describes allocation by operation, and the string-decoding section gives the decoding details.
+The borrowed-reading section lists allocation behavior by operation, and the string-decoding section describes decoding in detail.
 
 ## Features
 
@@ -29,6 +28,13 @@ The borrowed-reading section describes allocation by operation, and the string-d
 - `JsonString`: writes an escaped JSON string straight to a caller-owned `core::fmt::Write` sink without allocating
 
 ## Usage
+
+Add the dependency to `Cargo.toml`:
+
+```toml
+[dependencies]
+neco-json = "0.2"
+```
 
 ### Parse
 
@@ -64,7 +70,7 @@ use neco_json::{encode, JsonValue};
 use alloc::vec;
 
 let value = JsonValue::Object(vec![
-    ("x".into(), JsonValue::Number(1.0)),
+    ("x".into(), JsonValue::from(1_i64)),
     ("ok".into(), JsonValue::Bool(true)),
 ]);
 let bytes = encode(&value).unwrap(); // b"{\"x\":1,\"ok\":true}"
@@ -83,7 +89,7 @@ assert_eq!(restored, vec![1, 2, 3]);
 ### Borrow without allocating
 
 `parse_borrowed` validates the input and returns a `JsonRef` that borrows it.
-Reading the value kind, the raw text, the position, a bool, an integer, array and object iteration, and string comparison runs on the borrowed input and on values held on the stack, so none of them allocates.
+Accessing the value kind, raw text, position, booleans, and integers, iterating arrays and objects, and comparing strings all use the borrowed input and values held on the stack. These operations are allocation-free.
 `as_str()`, which returns a string as a `Cow`, allocates only when the string contains escapes.
 The next example reads a duplicate object key and an array with a repeated element.
 It uses plain `for` loops and a fixed-size stack array instead of `Vec::collect`, and it reads only strings without escapes, so the whole walk allocates nothing.
@@ -116,9 +122,7 @@ assert_eq!(a_values, [1, 2]); // the duplicate key "a" is kept, in input order
 
 `as_u64()` reads a decimal integer literal at or below `u64::MAX`.
 It returns `None` for a literal with a negative sign, a fraction, or an exponent, and for a value out of range.
-For integers at or below `2^53`, this exact value agrees with the owned API's `f64` number.
-Above that bound, some integers can no longer be represented exactly as `f64`, so the owned value may differ from the input.
-`as_u64()` always keeps the input's exact value.
+The owned API's `JsonNumber` preserves the same input spelling and applies the same integer condition.
 
 ### Decode strings only when needed
 
@@ -126,7 +130,7 @@ Above that bound, some integers can no longer be represented exactly as `f64`, s
 For any other kind, it returns `Ok(None)`.
 A string with no escapes borrows the input with no allocation.
 A string with escapes performs one checked allocation, sized to the exact decoded UTF-8 byte count.
-`string_eq()` compares a decoded string with a `&str` while decoding, without allocating either way.
+`string_eq()` compares the string with a `&str` while decoding, without allocating.
 
 ```rust
 use neco_json::{parse_borrowed, StringDecodeError};
@@ -179,14 +183,14 @@ assert_eq!(
 | `parse(input: &[u8]) -> Result<JsonValue, ParseError>` | Parse a byte slice as JSON |
 | `parse_borrowed(input: &str) -> Result<JsonRef<'_>, ParseError>` | Validate JSON and return a borrowed, allocation-free view of `input`; containers may nest up to 128 levels |
 | `encode(value: &JsonValue) -> Result<Vec<u8>, EncodeError>` | Encode a `JsonValue` to compact JSON bytes |
-| `ToJson` / `FromJson` | Lightweight traits for converting Rust values to and from JsonValue |
+| `ToJson` / `FromJson` | Lightweight conversion traits for Rust and JSON values |
 
 ### `JsonValue`
 
 Represents any JSON value.
 
 ```
-Null | Bool(bool) | Number(f64) | String(String) | Array(Vec<JsonValue>) | Object(Vec<(String, JsonValue)>)
+Null | Bool(bool) | Number(JsonNumber) | String(String) | Array(Vec<JsonValue>) | Object(Vec<(String, JsonValue)>)
 ```
 
 #### Type checks
@@ -205,9 +209,10 @@ Null | Bool(bool) | Number(f64) | String(String) | Array(Vec<JsonValue>) | Objec
 | Item | Description |
 |------|-------------|
 | `as_bool() -> Option<bool>` | Extract bool |
-| `as_f64() -> Option<f64>` | Extract number |
-| `as_i64() -> Option<i64>` | Extract a number that is an integer representable as `i64` |
-| `as_u64() -> Option<u64>` | Extract a number that is a non-negative integer representable as `u64` |
+| `as_number() -> Option<&JsonNumber>` | Extract the number and its input spelling |
+| `as_f64() -> Option<f64>` | Extract the finite interpretation from Rust's number parser |
+| `as_i64() -> Option<i64>` | Extract an integer token representable as `i64` |
+| `as_u64() -> Option<u64>` | Extract a non-negative integer token representable as `u64` |
 | `as_str() -> Option<&str>` | Extract string slice |
 | `as_array() -> Option<&[JsonValue]>` | Extract array slice |
 | `as_object() -> Option<&[(String, JsonValue)]>` | Extract object field slice |
@@ -235,6 +240,17 @@ Return `Ok(None)` when the field is absent or null; `Err(AccessError)` on type m
 | `optional_bool(key) -> Result<Option<bool>, AccessError>` | Optional bool field |
 | `optional_f64(key) -> Result<Option<f64>, AccessError>` | Optional number field |
 | `optional_array(key) -> Result<Option<&[JsonValue]>, AccessError>` | Optional array field |
+
+### `JsonNumber`
+
+Stores the input spelling of a JSON number. Its operations are:
+
+- `raw()`: Return the stored spelling.
+- `as_i64()`: Read an integer-only spelling as `i64`.
+- `as_u64()`: Read a non-negative integer-only spelling as `u64`.
+- `as_f64()`: Return the finite interpretation from Rust's number parser. Large values can be rounded.
+- `JsonNumber::new`: Validate one complete JSON number token and construct a `JsonNumber`.
+- `JsonNumber::from_f64`: Construct the Rust display spelling of a finite `f64`.
 
 ### `JsonKind`
 
@@ -313,9 +329,15 @@ Specification: https://tc39.es/ecma262/2024/multipage/structured-data.html#sec-u
 |------|-------------|
 | `ParseError` | Parse failure with byte `position` and kind |
 | `ParseErrorKind` | Specific parse failure reason |
-| `EncodeError` | Encode failure : currently only `NonFiniteNumber` |
-| `AccessError` | Field access failure: NotAnObject, MissingField, TypeMismatch |
-| `StringDecodeError` | `as_str()` decoding failure; variants are listed above |
+| `EncodeError` | Encoding failure; the current variant is `NonFiniteNumber` |
+| `AccessError` | Field access failure |
+| `StringDecodeError` | Failure from decoding a string through `as_str()`; variants are listed above |
+
+`AccessError` distinguishes three failures:
+
+- `NotAnObject`: the accessed value has another JSON kind
+- `MissingField`: a required field is absent
+- `TypeMismatch`: the value has a different type
 
 ## License
 

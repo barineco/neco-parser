@@ -1,15 +1,15 @@
-//! KDL のノードとドキュメントをメソッドチェーンで組み立てる builder 群。
+//! Builders for constructing KDL nodes and documents via method chaining.
 
 use crate::value::{KdlDocument, KdlEntry, KdlNode, KdlNumber, KdlValue};
 
-/// `KdlNode` を method chain で組み立てる builder。
+/// A builder for constructing a [`KdlNode`] via method chaining.
 #[derive(Debug, Clone)]
 pub struct KdlNodeBuilder {
     inner: KdlNode,
 }
 
 impl KdlNodeBuilder {
-    /// 指定名の Builder を生成する。
+    /// Creates a builder for a node with the given `name`.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             inner: KdlNode {
@@ -21,13 +21,13 @@ impl KdlNodeBuilder {
         }
     }
 
-    /// node-level type annotation `(T)name` の `T` を設定する。
+    /// Sets the node type annotation `T` in `(T)name`.
     pub fn ty(mut self, ty: impl Into<String>) -> Self {
         self.inner.ty = Some(ty.into());
         self
     }
 
-    /// 任意 KdlValue を Argument として追加する。
+    /// Appends a [`KdlValue`] as a positional argument.
     pub fn arg(mut self, value: KdlValue) -> Self {
         self.inner
             .entries
@@ -35,26 +35,22 @@ impl KdlNodeBuilder {
         self
     }
 
-    /// 文字列を Argument として追加する。
+    /// Appends a string as a positional argument.
     pub fn string_arg(self, value: impl Into<String>) -> Self {
         self.arg(KdlValue::String(value.into()))
     }
 
-    /// bool を Argument として追加する。
+    /// Appends a `bool` as a positional argument.
     pub fn bool_arg(self, value: bool) -> Self {
         self.arg(KdlValue::Bool(value))
     }
 
-    /// i64 を Argument として追加する。
+    /// Appends an `i64` as a positional argument.
     pub fn int_arg(self, value: i64) -> Self {
-        self.arg(KdlValue::Number(KdlNumber {
-            raw: value.to_string(),
-            as_i64: Some(value),
-            as_f64: Some(value as f64),
-        }))
+        self.arg(KdlValue::Number(KdlNumber::from_i64(value)))
     }
 
-    /// type annotation 付き Argument を追加する。
+    /// Appends a positional argument with a type annotation.
     pub fn typed_arg(mut self, ty: impl Into<String>, value: KdlValue) -> Self {
         self.inner.entries.push(KdlEntry::Argument {
             ty: Some(ty.into()),
@@ -63,7 +59,7 @@ impl KdlNodeBuilder {
         self
     }
 
-    /// 任意 KdlValue を named property として追加する。
+    /// Appends a [`KdlValue`] as a named property.
     pub fn prop(mut self, key: impl Into<String>, value: KdlValue) -> Self {
         self.inner.entries.push(KdlEntry::Property {
             key: key.into(),
@@ -73,29 +69,22 @@ impl KdlNodeBuilder {
         self
     }
 
-    /// 文字列 property を追加する。
+    /// Appends a string property.
     pub fn string_prop(self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.prop(key, KdlValue::String(value.into()))
     }
 
-    /// bool property を追加する。
+    /// Appends a `bool` property.
     pub fn bool_prop(self, key: impl Into<String>, value: bool) -> Self {
         self.prop(key, KdlValue::Bool(value))
     }
 
-    /// i64 property を追加する。
+    /// Appends an `i64` property.
     pub fn int_prop(self, key: impl Into<String>, value: i64) -> Self {
-        self.prop(
-            key,
-            KdlValue::Number(KdlNumber {
-                raw: value.to_string(),
-                as_i64: Some(value),
-                as_f64: Some(value as f64),
-            }),
-        )
+        self.prop(key, KdlValue::Number(KdlNumber::from_i64(value)))
     }
 
-    /// type annotation 付き property を追加する。
+    /// Appends a named property with a type annotation.
     pub fn typed_prop(
         mut self,
         key: impl Into<String>,
@@ -110,13 +99,13 @@ impl KdlNodeBuilder {
         self
     }
 
-    /// 子ノードを 1 件追加する。
+    /// Appends a single child node.
     pub fn child(mut self, child: KdlNode) -> Self {
         self.inner.children.get_or_insert_with(Vec::new).push(child);
         self
     }
 
-    /// 子ノードを iterator から append する。
+    /// Appends child nodes from an iterator.
     pub fn children<I: IntoIterator<Item = KdlNode>>(mut self, iter: I) -> Self {
         self.inner
             .children
@@ -125,39 +114,39 @@ impl KdlNodeBuilder {
         self
     }
 
-    /// 構築した `KdlNode` を返す。
+    /// Consumes the builder and returns the constructed [`KdlNode`].
     pub fn build(self) -> KdlNode {
         self.inner
     }
 }
 
-/// `KdlDocument` を method chain で組み立てる builder。
+/// A builder for constructing a [`KdlDocument`] via method chaining.
 #[derive(Debug, Clone)]
 pub struct KdlDocumentBuilder {
     inner: KdlDocument,
 }
 
 impl KdlDocumentBuilder {
-    /// 空のドキュメント Builder を生成する。
+    /// Creates an empty document builder.
     pub fn new() -> Self {
         Self {
             inner: KdlDocument { nodes: Vec::new() },
         }
     }
 
-    /// ノードを 1 件追加する。
+    /// Appends a single node.
     pub fn node(mut self, node: KdlNode) -> Self {
         self.inner.nodes.push(node);
         self
     }
 
-    /// ノードを iterator から append する。
+    /// Appends nodes from an iterator.
     pub fn nodes<I: IntoIterator<Item = KdlNode>>(mut self, iter: I) -> Self {
         self.inner.nodes.extend(iter);
         self
     }
 
-    /// 構築した `KdlDocument` を返す。
+    /// Consumes the builder and returns the constructed [`KdlDocument`].
     pub fn build(self) -> KdlDocument {
         self.inner
     }
@@ -170,8 +159,8 @@ impl Default for KdlDocumentBuilder {
 }
 
 impl KdlNode {
-    /// 指定名の `KdlNodeBuilder` を返す。`string_arg` などの追加メソッドで entry を積み、
-    /// `build()` で `KdlNode` を得る。
+    /// Returns a [`KdlNodeBuilder`] for a node with the given `name`.
+    /// Chain entry and child methods, then call [`KdlNodeBuilder::build`] to finish.
     #[doc = include_str!("../docs/examples/node-builder.md")]
     pub fn builder(name: impl Into<String>) -> KdlNodeBuilder {
         KdlNodeBuilder::new(name)
@@ -179,8 +168,8 @@ impl KdlNode {
 }
 
 impl KdlDocument {
-    /// 空の `KdlDocumentBuilder` を返す。`node()` の連結でノードを追加し、
-    /// `build()` で `KdlDocument` を得る。
+    /// Returns an empty [`KdlDocumentBuilder`].
+    /// Chain [`KdlDocumentBuilder::node`] calls, then call [`KdlDocumentBuilder::build`] to finish.
     #[doc = include_str!("../docs/examples/document-builder.md")]
     pub fn builder() -> KdlDocumentBuilder {
         KdlDocumentBuilder::new()

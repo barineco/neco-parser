@@ -1,13 +1,14 @@
 use core::fmt::Write;
 
+use crate::number::radix_digits_to_decimal;
 use crate::scan::{
     is_disallowed, is_identifier_char, is_newline, is_reserved_keyword, split_radix_prefix,
 };
 use crate::{KdlDocument, KdlEntry, KdlNode, KdlNumber, KdlValue};
 
-/// `KdlDocument` を正規化形式の文字列に変換する。
+/// Converts a [`KdlDocument`] into its normalized string form.
 ///
-/// 正規化ルールはクレート README を参照。
+/// See the crate README (`normalize`) for normalization rules.
 pub fn normalize(doc: &KdlDocument) -> String {
     let mut out = String::new();
     for node in &doc.nodes {
@@ -33,29 +34,29 @@ fn write_node(out: &mut String, node: &KdlNode, depth: usize) {
     write_identifier_or_string(out, &node.name);
 
     let mut args: Vec<&KdlEntry> = Vec::new();
-    let mut props: Vec<(&str, &KdlEntry)> = Vec::new();
+    let mut prop_keys: Vec<&str> = Vec::new();
 
     for entry in &node.entries {
         match entry {
             KdlEntry::Argument { .. } => args.push(entry),
-            KdlEntry::Property { key, .. } => {
-                if let Some(existing) = props.iter_mut().find(|(k, _)| *k == key.as_str()) {
-                    existing.1 = entry;
-                } else {
-                    props.push((key, entry));
-                }
+            KdlEntry::Property { key, .. } if !prop_keys.contains(&key.as_str()) => {
+                prop_keys.push(key);
             }
+            KdlEntry::Property { .. } => {}
         }
     }
 
-    props.sort_by_key(|(k, _)| *k);
+    prop_keys.sort_unstable();
 
     for entry in &args {
         out.push(' ');
         write_entry(out, entry);
     }
 
-    for (_, entry) in &props {
+    for entry in prop_keys
+        .into_iter()
+        .filter_map(|key| node.property_entry(key))
+    {
         out.push(' ');
         write_entry(out, entry);
     }
@@ -245,58 +246,12 @@ fn normalize_number(n: &KdlNumber) -> String {
 }
 
 fn format_prefixed_number(sign: &str, digits: &str, radix: u32) -> String {
-    if let Ok(val) = u128::from_str_radix(digits, radix) {
-        if sign == "-" && val != 0 {
-            format!("-{val}")
-        } else {
-            format!("{val}")
-        }
+    let decimal = radix_digits_to_decimal(digits, radix);
+    if sign == "-" && decimal != "0" {
+        format!("-{decimal}")
     } else {
-        let decimal = big_radix_to_decimal(digits, radix);
-        if sign == "-" && decimal != "0" {
-            format!("-{decimal}")
-        } else {
-            decimal
-        }
+        decimal
     }
-}
-
-fn big_radix_to_decimal(digits: &str, radix: u32) -> String {
-    let mut result: Vec<u8> = vec![0];
-
-    for ch in digits.chars() {
-        let digit_val = ch.to_digit(radix).expect("parser-validated digit") as u8;
-
-        let mut carry: u16 = 0;
-        for d in result.iter_mut() {
-            let prod = (*d as u16) * (radix as u16) + carry;
-            *d = (prod % 10) as u8;
-            carry = prod / 10;
-        }
-        while carry > 0 {
-            result.push((carry % 10) as u8);
-            carry /= 10;
-        }
-
-        let mut carry: u16 = digit_val as u16;
-        for d in result.iter_mut() {
-            let sum = (*d as u16) + carry;
-            *d = (sum % 10) as u8;
-            carry = sum / 10;
-            if carry == 0 {
-                break;
-            }
-        }
-        while carry > 0 {
-            result.push((carry % 10) as u8);
-            carry /= 10;
-        }
-    }
-
-    while result.len() > 1 && *result.last().unwrap() == 0 {
-        result.pop();
-    }
-    result.iter().rev().map(|d| (b'0' + d) as char).collect()
 }
 
 fn normalize_decimal_integer(s: &str) -> String {

@@ -4,7 +4,7 @@ fn span(start: usize, end: usize) -> KdlSpan {
     KdlSpan { start, end }
 }
 
-fn arg_value<'a>(entry: &'a KdlEntry) -> &'a KdlValue {
+fn arg_value(entry: &KdlEntry) -> &KdlValue {
     match entry {
         KdlEntry::Argument { value, .. } => value,
         KdlEntry::Property { value, .. } => value,

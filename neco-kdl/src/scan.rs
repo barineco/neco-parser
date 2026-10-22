@@ -116,9 +116,9 @@ impl ScannerState<'_> {
     }
 }
 
-/// byte offset を一始まりの行と列へ導出する唯一の変換。
+/// Converts a byte `offset` in `input` to a 1-based (line, column) pair.
 ///
-/// 範囲外と文字の途中の offset には None を返す。改行の規則は解析と同一である。
+/// Returns `None` if `offset` is out of bounds or not on a UTF-8 character boundary; newline handling matches the parser.
 pub fn line_col(input: &str, offset: usize) -> Option<(usize, usize)> {
     if !input.is_char_boundary(offset) {
         return None;

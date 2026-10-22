@@ -2,7 +2,8 @@ use crate::scan::{radix_for_prefix, split_radix_prefix, Scanner};
 use crate::{KdlError, KdlErrorKind, KdlNumber, NumberError};
 
 impl KdlNumber {
-    /// raw と解釈値が一致する数値を構築する。
+    /// Constructs a [`KdlNumber`] after verifying that `raw` is a valid KDL number
+    /// whose interpretation matches the given integer and floating-point values.
     pub fn new(
         raw: impl Into<String>,
         as_i64: Option<i64>,
@@ -25,6 +26,16 @@ impl KdlNumber {
             return Err(NumberError);
         }
         Ok(parsed)
+    }
+
+    pub(crate) fn from_i64(value: i64) -> Self {
+        let raw = value.to_string();
+        let (as_i64, as_f64) = interpret_decimal(&raw, DecimalKind::Integer);
+        Self {
+            raw,
+            as_i64,
+            as_f64,
+        }
     }
 }
 
@@ -282,18 +293,51 @@ fn interpret_decimal(raw: &str, kind: DecimalKind) -> (Option<i64>, Option<f64>)
 
 fn interpret_prefixed(clean: &str, radix: u32) -> (Option<i64>, Option<f64>) {
     let (neg, digits) = strip_sign_and_prefix(clean);
-    let val = u64::from_str_radix(digits, radix).ok();
-    let i = val.and_then(|v| {
-        if neg {
-            (v as i128)
-                .checked_neg()
-                .and_then(|n| i64::try_from(n).ok())
-        } else {
-            i64::try_from(v).ok()
+    let magnitude = radix_digits_to_decimal(digits, radix);
+    let decimal = if neg {
+        format!("-{magnitude}")
+    } else {
+        magnitude
+    };
+    interpret_decimal(&decimal, DecimalKind::Integer)
+}
+
+pub(crate) fn radix_digits_to_decimal(digits: &str, radix: u32) -> String {
+    let mut result: Vec<u8> = vec![0];
+
+    for ch in digits.chars() {
+        let digit_val = ch.to_digit(radix).expect("parser-validated digit") as u8;
+
+        let mut carry: u16 = 0;
+        for d in result.iter_mut() {
+            let prod = (*d as u16) * (radix as u16) + carry;
+            *d = (prod % 10) as u8;
+            carry = prod / 10;
         }
-    });
-    let f = i.map(|v| v as f64);
-    (i, f)
+        while carry > 0 {
+            result.push((carry % 10) as u8);
+            carry /= 10;
+        }
+
+        let mut carry: u16 = digit_val as u16;
+        for d in result.iter_mut() {
+            let sum = (*d as u16) + carry;
+            *d = (sum % 10) as u8;
+            carry = sum / 10;
+            if carry == 0 {
+                break;
+            }
+        }
+        while carry > 0 {
+            result.push((carry % 10) as u8);
+            carry /= 10;
+        }
+    }
+
+    while result.len() > 1 && *result.last().unwrap() == 0 {
+        result.pop();
+    }
+    result.iter().rev().map(|d| (b'0' + d) as char).collect()
 }
 
 fn strip_sign_and_prefix(s: &str) -> (bool, &str) {
@@ -420,6 +464,42 @@ mod tests {
         assert_eq!(n.as_i64, None);
 
         assert!(n.as_f64.is_some());
+    }
+
+    #[test]
+    fn prefixed_overflow_has_nearest_f64() {
+        let n = num("0xffffffffffffffff ");
+        assert_eq!(n.as_i64, None);
+        assert_eq!(n.as_f64, Some(18446744073709551615_u64 as f64));
+    }
+
+    #[test]
+    fn prefixed_and_decimal_integers_share_interpretation() {
+        for (prefixed, decimal) in [
+            ("0x7fffffffffffffff ", "9223372036854775807 "),
+            ("-0x8000000000000000 ", "-9223372036854775808 "),
+            ("0x1_0000_0000_0000_0000 ", "18446744073709551616 "),
+            ("-0b0 ", "-0 "),
+        ] {
+            let (p, d) = (num(prefixed), num(decimal));
+            assert_eq!(p.as_i64, d.as_i64, "{prefixed}");
+            assert_eq!(
+                p.as_f64.map(f64::to_bits),
+                d.as_f64.map(f64::to_bits),
+                "{prefixed}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_i64_matches_parsed_decimal() {
+        for value in [i64::MIN, -1, 0, 9007199254740993, i64::MAX] {
+            let built = KdlNumber::from_i64(value);
+            let parsed = num(&format!("{value} "));
+            assert_eq!(built.raw, parsed.raw);
+            assert_eq!(built.as_i64, parsed.as_i64);
+            assert_eq!(built.as_f64, parsed.as_f64);
+        }
     }
 
     #[test]

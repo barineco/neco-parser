@@ -2,32 +2,20 @@
 
 [English](README.md)
 
-`neco-parser` は、構造化テキスト形式を型付き表現へ読み込む Rust crate 群です。
+neco-parser は、JSON と KDL v2 の構文解析を扱う依存最小の Rust クレート群です。
+解析した値の参照と、値からテキストへの出力に対応しています。
 
-各パーサー crate は 1 つのテキスト形式を扱い、読み込みと値の参照のための小さな Rust API を提供します。
-`*-ast` crate は、それらの値を `neco-ast` の共有構造参照 trait へ変換します。
+## クレート
 
-このリポジトリの crate は、外部 Rust crate に依存しません。
+| クレート | 概要 |
+|---|---|
+| [neco-kdl](./neco-kdl) | KDL v2 の解析、直列化、正規化、および文書構築 |
+| [neco-json](./neco-json) | JSON の解析、直列化、および所有型と借用型による値の参照 |
 
-## crate 一覧
+## 関連ライブラリ
 
-| crate | 概要 | 内部依存 |
-|---|---|---|
-| [`neco-ast`](./neco-ast) | 共有構造参照 trait と値型 | なし |
-| [`neco-kdl`](./neco-kdl) | KDL v2 のパーサー、シリアライザ、文書ビルダー | なし |
-| [`neco-json`](./neco-json) | JSON のパース、エンコード、型付きフィールド参照 | なし |
-| [`neco-kdl-ast`](./neco-kdl-ast) | KDL v2 文書向け構造化 AST 層 | neco-kdl, neco-ast |
-| [`neco-json-ast`](./neco-json-ast) | JSON 値の構造参照 | neco-json, neco-ast |
-| [`neco-json5`](./neco-json5) | JSON5 の構文の一部に対応するパーサー | なし |
-| [`neco-json5-ast`](./neco-json5-ast) | JSON5 値の構造参照 | neco-json5, neco-ast |
-| [`neco-plist`](./neco-plist) | plist XML の構文の一部に対応するパーサー | なし |
-| [`neco-plist-ast`](./neco-plist-ast) | plist 値の構造参照 | neco-plist, neco-ast |
-| [`neco-toml`](./neco-toml) | TOML の構文の一部に対応するパーサー | なし |
-| [`neco-toml-ast`](./neco-toml-ast) | TOML 値の構造参照 | neco-toml, neco-ast |
-| [`neco-xml`](./neco-xml) | XML の構文の一部に対応するパーサー | なし |
-| [`neco-xml-ast`](./neco-xml-ast) | XML 値の構造参照 | neco-xml, neco-ast |
-| [`neco-yml`](./neco-yml) | YAML の構文の一部に対応するパーサー | なし |
-| [`neco-yml-ast`](./neco-yml-ast) | YAML 値の構造参照 | neco-yml, neco-ast |
+- [kdleam](https://github.com/barineco/kdleam): Gleam 対応の KDL v2 ライブラリ
+- [neco-lean](https://github.com/barineco/neco-lean): Lean 4 のツールライブラリ ( JSON, KDL のモジュールを含む )
 
 ## ライセンス
 

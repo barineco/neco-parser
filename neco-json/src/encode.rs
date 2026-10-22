@@ -1,6 +1,4 @@
-use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt::Write;
 
 use crate::{EncodeError, JsonValue};
 
@@ -16,7 +14,7 @@ fn encode_value(value: &JsonValue, output: &mut Vec<u8>) -> Result<(), EncodeErr
         JsonValue::Null => output.extend_from_slice(b"null"),
         JsonValue::Bool(true) => output.extend_from_slice(b"true"),
         JsonValue::Bool(false) => output.extend_from_slice(b"false"),
-        JsonValue::Number(number) => encode_number(*number, output)?,
+        JsonValue::Number(number) => output.extend_from_slice(number.raw().as_bytes()),
         JsonValue::String(text) => encode_string(text, output),
         JsonValue::Array(items) => {
             output.push(b'[');
@@ -41,17 +39,6 @@ fn encode_value(value: &JsonValue, output: &mut Vec<u8>) -> Result<(), EncodeErr
             output.push(b'}');
         }
     }
-    Ok(())
-}
-
-fn encode_number(number: f64, output: &mut Vec<u8>) -> Result<(), EncodeError> {
-    if !number.is_finite() {
-        return Err(EncodeError::NonFiniteNumber);
-    }
-
-    let mut buffer = String::new();
-    write!(&mut buffer, "{number}").expect("writing to String should not fail");
-    output.extend_from_slice(buffer.as_bytes());
     Ok(())
 }
 
@@ -91,17 +78,21 @@ fn hex_digit(value: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    fn number(value: f64) -> JsonValue {
+        JsonNumber::from_f64(value).unwrap().into()
+    }
+
     use alloc::vec;
 
     use super::encode;
-    use crate::{parse, EncodeError, JsonValue};
+    use crate::{parse, EncodeError, JsonNumber, JsonValue};
 
     #[test]
     fn encodes_basic_variants() {
         assert_eq!(encode(&JsonValue::Null).unwrap(), b"null");
         assert_eq!(encode(&JsonValue::Bool(true)).unwrap(), b"true");
         assert_eq!(encode(&JsonValue::Bool(false)).unwrap(), b"false");
-        assert_eq!(encode(&JsonValue::Number(42.5)).unwrap(), b"42.5");
+        assert_eq!(encode(&number(42.5)).unwrap(), b"42.5");
         assert_eq!(
             encode(&JsonValue::String("neco".into())).unwrap(),
             b"\"neco\""
@@ -111,19 +102,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_finite_numbers() {
-        assert_eq!(
-            encode(&JsonValue::Number(f64::NAN)),
-            Err(EncodeError::NonFiniteNumber)
-        );
-        assert_eq!(
-            encode(&JsonValue::Number(f64::INFINITY)),
-            Err(EncodeError::NonFiniteNumber)
-        );
-        assert_eq!(
-            encode(&JsonValue::Number(f64::NEG_INFINITY)),
-            Err(EncodeError::NonFiniteNumber)
-        );
+    fn constructor_rejects_non_finite_numbers() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(
+                JsonNumber::from_f64(value),
+                Err(EncodeError::NonFiniteNumber)
+            );
+        }
     }
 
     #[test]
@@ -137,8 +122,8 @@ mod tests {
 
     #[test]
     fn encodes_integer_valued_f64_using_current_representation() {
-        assert_eq!(encode(&JsonValue::Number(42.0)).unwrap(), b"42");
-        assert_eq!(encode(&JsonValue::Number(-0.0)).unwrap(), b"-0");
+        assert_eq!(encode(&number(42.0)).unwrap(), b"42");
+        assert_eq!(encode(&number(-0.0)).unwrap(), b"-0");
     }
 
     #[test]
@@ -156,7 +141,7 @@ mod tests {
                 JsonValue::Array(vec![
                     JsonValue::Null,
                     JsonValue::Bool(true),
-                    JsonValue::Object(vec![("x".into(), JsonValue::Number(1.0))]),
+                    JsonValue::Object(vec![("x".into(), number(1.0))]),
                 ]),
             ),
         ]);
@@ -172,15 +157,12 @@ mod tests {
         let value = JsonValue::Object(vec![
             ("null".into(), JsonValue::Null),
             ("bool".into(), JsonValue::Bool(true)),
-            ("int".into(), JsonValue::Number(7.0)),
-            ("float".into(), JsonValue::Number(-3.25)),
+            ("int".into(), number(7.0)),
+            ("float".into(), number(-3.25)),
             ("text".into(), JsonValue::String("ねこ\njson".into())),
             (
                 "array".into(),
-                JsonValue::Array(vec![
-                    JsonValue::Number(0.5),
-                    JsonValue::String("\"quoted\"".into()),
-                ]),
+                JsonValue::Array(vec![number(0.5), JsonValue::String("\"quoted\"".into())]),
             ),
             (
                 "object".into(),
@@ -199,7 +181,7 @@ mod tests {
             (
                 "meta".into(),
                 JsonValue::Object(vec![
-                    ("version".into(), JsonValue::Number(1.0)),
+                    ("version".into(), number(1.0)),
                     (
                         "tags".into(),
                         JsonValue::Array(vec![
@@ -216,7 +198,7 @@ mod tests {
                     JsonValue::Object(vec![
                         ("id".into(), JsonValue::String("one".into())),
                         ("active".into(), JsonValue::Bool(true)),
-                        ("score".into(), JsonValue::Number(1.5e2)),
+                        ("score".into(), number(1.5e2)),
                     ]),
                     JsonValue::Array(vec![
                         JsonValue::String("nested".into()),

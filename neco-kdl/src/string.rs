@@ -185,36 +185,60 @@ fn parse_single_line_quoted_body(s: &mut Scanner<'_>) -> Result<String, KdlError
     }
 }
 
+struct MultilineLine {
+    start: usize,
+    text: String,
+    offsets: Vec<usize>,
+}
+
+impl MultilineLine {
+    fn new(start: usize) -> Self {
+        Self {
+            start,
+            text: String::new(),
+            offsets: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, ch: char, offset: usize) {
+        self.text.push(ch);
+        self.offsets.push(offset);
+    }
+}
+
 fn parse_multiline_quoted_body(s: &mut Scanner<'_>) -> Result<String, KdlError> {
     if !s.consume_newline() {
         return Err(s.make_error(KdlErrorKind::UnclosedString));
     }
 
-    let mut raw_lines: Vec<String> = Vec::new();
-    let mut current_line = String::new();
+    let mut lines: Vec<MultilineLine> = Vec::new();
+    let mut current = MultilineLine::new(s.byte_offset());
 
     loop {
         match s.peek() {
             Some('"') => {
+                let first = s.byte_offset();
                 s.advance();
                 if s.peek() == Some('"') {
+                    let second = s.byte_offset();
                     s.advance();
                     if s.peek() == Some('"') {
                         s.advance();
 
-                        raw_lines.push(current_line);
-                        return process_multiline(raw_lines);
+                        lines.push(current);
+                        return process_multiline(s, &lines);
                     }
 
-                    current_line.push('"');
-                    current_line.push('"');
+                    current.push('"', first);
+                    current.push('"', second);
                     continue;
                 }
 
-                current_line.push('"');
+                current.push('"', first);
                 continue;
             }
             Some('\\') => {
+                let backslash = s.byte_offset();
                 s.advance();
 
                 match s.peek() {
@@ -222,8 +246,8 @@ fn parse_multiline_quoted_body(s: &mut Scanner<'_>) -> Result<String, KdlError> 
                         consume_whitespace_escape(s);
                     }
                     Some(ch) => {
-                        current_line.push('\\');
-                        current_line.push(ch);
+                        current.push('\\', backslash);
+                        current.push(ch, s.byte_offset());
                         s.advance();
                     }
                     None => {
@@ -233,29 +257,27 @@ fn parse_multiline_quoted_body(s: &mut Scanner<'_>) -> Result<String, KdlError> 
             }
             Some(ch) if is_newline(ch) => {
                 s.consume_newline();
-                raw_lines.push(core::mem::take(&mut current_line));
-                current_line = String::new();
+                let next = MultilineLine::new(s.byte_offset());
+                lines.push(core::mem::replace(&mut current, next));
             }
             Some(ch) if is_disallowed(ch) => {
                 return Err(s.make_error(KdlErrorKind::DisallowedCodePoint(ch)));
             }
             Some(ch) => {
+                current.push(ch, s.byte_offset());
                 s.advance();
-                current_line.push(ch);
             }
             None => return Err(s.make_error(KdlErrorKind::UnclosedString)),
         }
     }
 }
 
-fn process_multiline(raw_lines: Vec<String>) -> Result<String, KdlError> {
-    if raw_lines.is_empty() {
+fn process_multiline(s: &Scanner<'_>, lines: &[MultilineLine]) -> Result<String, KdlError> {
+    let Some((prefix_line, body_lines)) = lines.split_last() else {
         return Ok(String::new());
-    }
-
-    let prefix = raw_lines.last().unwrap();
-
-    let body_lines = &raw_lines[..raw_lines.len() - 1];
+    };
+    let prefix = prefix_line.text.as_str();
+    let prefix_chars = prefix.chars().count();
 
     let mut result = String::new();
     for (i, line) in body_lines.iter().enumerate() {
@@ -263,96 +285,77 @@ fn process_multiline(raw_lines: Vec<String>) -> Result<String, KdlError> {
             result.push('\n');
         }
 
-        if line.chars().all(is_unicode_space) {
+        if line.text.chars().all(is_unicode_space) {
             continue;
         }
 
-        if !line.starts_with(prefix.as_str()) {
-            return Err(KdlError {
-                line: 0,
-                col: 0,
-                kind: KdlErrorKind::InconsistentIndentation,
-            });
+        if !line.text.starts_with(prefix) {
+            return Err(s.make_error_at(line.start, KdlErrorKind::InconsistentIndentation));
         }
 
-        let stripped = &line[prefix.len()..];
-
-        let resolved = resolve_escapes(stripped)?;
-        result.push_str(&resolved);
+        let stripped: Vec<(char, usize)> = line
+            .text
+            .chars()
+            .zip(line.offsets.iter().copied())
+            .skip(prefix_chars)
+            .collect();
+        result.push_str(&resolve_escapes(s, &stripped)?);
     }
 
     Ok(result)
 }
 
-fn resolve_escapes(input: &str) -> Result<String, KdlError> {
+fn resolve_escapes(s: &Scanner<'_>, chars: &[(char, usize)]) -> Result<String, KdlError> {
+    let error_at = |index: usize, kind: KdlErrorKind| {
+        let offset = chars
+            .get(index)
+            .or_else(|| chars.last())
+            .map_or(0, |&(_, offset)| offset);
+        s.make_error_at(offset, kind)
+    };
+
     let mut result = String::new();
-    let mut chars = input.chars();
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            match chars.next() {
-                Some('"') => result.push('"'),
-                Some('\\') => result.push('\\'),
-                Some('b') => result.push('\u{0008}'),
-                Some('f') => result.push('\u{000C}'),
-                Some('n') => result.push('\n'),
-                Some('r') => result.push('\r'),
-                Some('t') => result.push('\t'),
-                Some('s') => result.push(' '),
-                Some('u') => {
-                    match chars.next() {
-                        Some('{') => {}
-                        _ => {
-                            return Err(KdlError {
-                                line: 0,
-                                col: 0,
-                                kind: KdlErrorKind::InvalidUnicodeEscape,
-                            })
-                        }
-                    }
-                    let mut hex = String::new();
-                    loop {
-                        match chars.next() {
-                            Some('}') => break,
-                            Some(c) if c.is_ascii_hexdigit() && hex.len() < 6 => hex.push(c),
-                            _ => {
-                                return Err(KdlError {
-                                    line: 0,
-                                    col: 0,
-                                    kind: KdlErrorKind::InvalidUnicodeEscape,
-                                })
-                            }
-                        }
-                    }
-                    if hex.is_empty() {
-                        return Err(KdlError {
-                            line: 0,
-                            col: 0,
-                            kind: KdlErrorKind::InvalidUnicodeEscape,
-                        });
-                    }
-                    let cp = u32::from_str_radix(&hex, 16).map_err(|_| KdlError {
-                        line: 0,
-                        col: 0,
-                        kind: KdlErrorKind::InvalidUnicodeEscape,
-                    })?;
-                    let c = char::from_u32(cp).ok_or(KdlError {
-                        line: 0,
-                        col: 0,
-                        kind: KdlErrorKind::InvalidUnicodeEscape,
-                    })?;
-                    result.push(c);
+    let mut i = 0;
+    while let Some(&(ch, _)) = chars.get(i) {
+        i += 1;
+        if ch != '\\' {
+            result.push(ch);
+            continue;
+        }
+        let escaped = chars.get(i).map(|&(escaped, _)| escaped);
+        match escaped {
+            Some('"') => result.push('"'),
+            Some('\\') => result.push('\\'),
+            Some('b') => result.push('\u{0008}'),
+            Some('f') => result.push('\u{000C}'),
+            Some('n') => result.push('\n'),
+            Some('r') => result.push('\r'),
+            Some('t') => result.push('\t'),
+            Some('s') => result.push(' '),
+            Some('u') => {
+                i += 1;
+                if chars.get(i).map(|&(c, _)| c) != Some('{') {
+                    return Err(error_at(i, KdlErrorKind::InvalidUnicodeEscape));
                 }
-                _ => {
-                    return Err(KdlError {
-                        line: 0,
-                        col: 0,
-                        kind: KdlErrorKind::InvalidEscape,
-                    })
+                i += 1;
+                let mut hex = String::new();
+                loop {
+                    match chars.get(i).map(|&(c, _)| c) {
+                        Some('}') => break,
+                        Some(c) if c.is_ascii_hexdigit() && hex.len() < 6 => hex.push(c),
+                        _ => return Err(error_at(i, KdlErrorKind::InvalidUnicodeEscape)),
+                    }
+                    i += 1;
+                }
+                let decoded = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32);
+                match decoded {
+                    Some(c) if !hex.is_empty() => result.push(c),
+                    _ => return Err(error_at(i, KdlErrorKind::InvalidUnicodeEscape)),
                 }
             }
-        } else {
-            result.push(ch);
+            _ => return Err(error_at(i, KdlErrorKind::InvalidEscape)),
         }
+        i += 1;
     }
     Ok(result)
 }
@@ -433,7 +436,8 @@ fn parse_multiline_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<St
         return Err(s.make_error(KdlErrorKind::UnclosedString));
     }
 
-    let mut raw_lines: Vec<String> = Vec::new();
+    let mut raw_lines: Vec<(usize, String)> = Vec::new();
+    let mut line_start = s.byte_offset();
     let mut current_line = String::new();
 
     loop {
@@ -451,8 +455,8 @@ fn parse_multiline_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<St
                             matched += 1;
                         }
                         if matched == hash_count {
-                            raw_lines.push(current_line);
-                            return process_multiline_raw(raw_lines);
+                            raw_lines.push((line_start, current_line));
+                            return process_multiline_raw(s, &raw_lines);
                         }
 
                         current_line.push('"');
@@ -471,7 +475,8 @@ fn parse_multiline_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<St
             }
             Some(ch) if is_newline(ch) => {
                 s.consume_newline();
-                raw_lines.push(core::mem::take(&mut current_line));
+                raw_lines.push((line_start, core::mem::take(&mut current_line)));
+                line_start = s.byte_offset();
             }
             Some(ch) if is_disallowed(ch) => {
                 return Err(s.make_error(KdlErrorKind::DisallowedCodePoint(ch)));
@@ -485,16 +490,16 @@ fn parse_multiline_raw_body(s: &mut Scanner<'_>, hash_count: usize) -> Result<St
     }
 }
 
-fn process_multiline_raw(raw_lines: Vec<String>) -> Result<String, KdlError> {
-    if raw_lines.is_empty() {
+fn process_multiline_raw(
+    s: &Scanner<'_>,
+    raw_lines: &[(usize, String)],
+) -> Result<String, KdlError> {
+    let Some(((_, prefix), body_lines)) = raw_lines.split_last() else {
         return Ok(String::new());
-    }
-
-    let prefix = raw_lines.last().unwrap();
-    let body_lines = &raw_lines[..raw_lines.len() - 1];
+    };
 
     let mut result = String::new();
-    for (i, line) in body_lines.iter().enumerate() {
+    for (i, (start, line)) in body_lines.iter().enumerate() {
         if i > 0 {
             result.push('\n');
         }
@@ -504,11 +509,7 @@ fn process_multiline_raw(raw_lines: Vec<String>) -> Result<String, KdlError> {
         }
 
         if !line.starts_with(prefix.as_str()) {
-            return Err(KdlError {
-                line: 0,
-                col: 0,
-                kind: KdlErrorKind::InconsistentIndentation,
-            });
+            return Err(s.make_error_at(*start, KdlErrorKind::InconsistentIndentation));
         }
 
         result.push_str(&line[prefix.len()..]);
@@ -817,5 +818,58 @@ mod tests {
     fn parse_string_raw_dispatch() {
         let mut s = Scanner::new("#\"raw\"#");
         assert_eq!(parse_string(&mut s).unwrap(), "raw");
+    }
+
+    fn error_position(input: &str) -> (usize, usize, KdlErrorKind) {
+        let error = crate::parse(input).unwrap_err();
+        (error.line(), error.col(), error.kind().clone())
+    }
+
+    #[test]
+    fn multiline_inconsistent_indentation_reports_line_start() {
+        assert_eq!(
+            error_position("node \"\"\"\n    a\n  b\n    \"\"\"\n"),
+            (3, 1, KdlErrorKind::InconsistentIndentation)
+        );
+    }
+
+    #[test]
+    fn multiline_raw_inconsistent_indentation_reports_line_start() {
+        assert_eq!(
+            error_position("node #\"\"\"\n    a\n  b\n    \"\"\"#\n"),
+            (3, 1, KdlErrorKind::InconsistentIndentation)
+        );
+    }
+
+    #[test]
+    fn multiline_invalid_escape_reports_escaped_char() {
+        assert_eq!(
+            error_position("node \"\"\"\n    a\\q\n    \"\"\"\n"),
+            (2, 7, KdlErrorKind::InvalidEscape)
+        );
+    }
+
+    #[test]
+    fn multiline_invalid_unicode_escape_reports_offending_char() {
+        assert_eq!(
+            error_position("node \"\"\"\n    \\u{zz}\n    \"\"\"\n"),
+            (2, 8, KdlErrorKind::InvalidUnicodeEscape)
+        );
+    }
+
+    #[test]
+    fn multiline_error_after_line_continuation_reports_input_position() {
+        assert_eq!(
+            error_position("node \"\"\"\n    a\\\n    b\\q\n    \"\"\"\n"),
+            (3, 7, KdlErrorKind::InvalidEscape)
+        );
+    }
+
+    #[test]
+    fn single_line_invalid_escape_reports_escaped_char() {
+        assert_eq!(
+            error_position("node \"a\\q\"\n"),
+            (1, 9, KdlErrorKind::InvalidEscape)
+        );
     }
 }

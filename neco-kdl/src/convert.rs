@@ -139,7 +139,7 @@ fn primitive_to_argument(value: &Value) -> Result<KdlEntry, ValueError> {
         }),
         Value::Integer(i) => Ok(KdlEntry::Argument {
             ty: None,
-            value: KdlValue::Number(i64_to_kdl_number(*i)?),
+            value: KdlValue::Number(KdlNumber::from_i64(*i)),
         }),
         Value::Float(f) => Ok(KdlEntry::Argument {
             ty: Some(FLOAT_TYPE.to_string()),
@@ -248,12 +248,6 @@ fn kdl_entry_to_value(entry: &KdlEntry) -> Result<Value, ValueError> {
             }
         }
     }
-}
-
-fn i64_to_kdl_number(i: i64) -> Result<KdlNumber, ValueError> {
-    let raw = i.to_string();
-    KdlNumber::new(raw.clone(), Some(i), Some(i as f64))
-        .map_err(|_| ValueError::new(ValueErrorReason::NumberCannotBeConverted(raw)))
 }
 
 fn f64_to_kdl_number(f: f64) -> Result<KdlNumber, ValueError> {
